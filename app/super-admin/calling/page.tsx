@@ -292,12 +292,30 @@ export default function CallingDashboard() {
             pendingTransferToRef.current = currentUserId
             setPendingTransferTo(currentUserId)
             console.log(`✅ Set pendingTransferToRef.current = ${currentUserId}`)
+
+            // If call already arrived (race condition), update the incoming call map to mark as transfer
+            if (incomingCallMap[currentUserId]) {
+              console.log('⚡ Call already arrived - updating to mark as transfer')
+              setIncomingCallMap(prev => ({
+                ...prev,
+                [currentUserId]: {
+                  ...prev[currentUserId],
+                  isTransfer: true
+                }
+              }))
+            }
           }
 
           // If someone else answered, cancel our incoming ring
           if (event.event_type === 'answered' && event.agent_id !== currentUserId) {
             console.log('🚫 Another agent answered, canceling our ring')
             setIncomingCallMap({}) // Clear incoming call UI
+          }
+
+          // If ANY agent answered (including myself), clear optimistic transfer UI
+          if (event.event_type === 'answered') {
+            console.log('✅ Call answered - clearing optimistic transfer UI')
+            setOptimisticTransferMap({}) // Clear "transferring..." UI
           }
 
           // If this agent declined

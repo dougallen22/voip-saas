@@ -93,6 +93,19 @@ export async function POST(request: Request) {
   <Hangup/>
 </Response>`
 
+    // Delete from parked_calls table BEFORE redirect (so all UIs clear immediately)
+    console.log('🗑️ Deleting parked call from database:', parkedCallId)
+    const { error: deleteError } = await adminClient
+      .from('parked_calls')
+      .delete()
+      .eq('id', parkedCallId)
+
+    if (deleteError) {
+      console.error('Error deleting parked call:', deleteError)
+    } else {
+      console.log('✅ Parked call deleted from database - all UIs should clear now')
+    }
+
     console.log('Redirecting PSTN call to new agent:', newAgentId)
 
     // Redirect the PSTN call from conference to the new agent
@@ -111,16 +124,6 @@ export async function POST(request: Request) {
           status: 'in-progress',
         })
         .eq('id', parkedCall.call_id)
-    }
-
-    // Delete from parked_calls table
-    const { error: deleteError } = await adminClient
-      .from('parked_calls')
-      .delete()
-      .eq('id', parkedCallId)
-
-    if (deleteError) {
-      console.error('Error deleting parked call:', deleteError)
     }
 
     console.log('✅ Call unparked successfully')
