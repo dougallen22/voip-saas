@@ -16,11 +16,14 @@ export async function POST(request: Request) {
 
     console.log('🎵 Generating park TwiML for conference:', conferenceName)
 
+    const statusCallbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://8336d5b13c1c.ngrok-free.app'}/api/twilio/parked-call-status`
+
     // Return TwiML that puts the call in a conference with hold music
+    // action callback will fire when the Dial ends (caller hangs up from parking lot)
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">Your call is being placed on hold.</Say>
-  <Dial>
+  <Dial action="${statusCallbackUrl}" method="POST">
     <Conference
       beep="false"
       waitUrl="${holdMusicUrl}"
