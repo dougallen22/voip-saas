@@ -329,6 +329,12 @@ export default function CallingDashboard() {
             console.log('🚫 Caller hung up - clearing all incoming call UIs')
             setIncomingCallMap({}) // Clear incoming call UI for all agents
           }
+
+          // If call was parked, clear incoming call UI on all screens
+          if (event.event_type === 'parked') {
+            console.log('🚗 Call parked - clearing incoming call UI on all screens')
+            setIncomingCallMap({}) // Clear incoming call UI for all agents
+          }
         }
       )
       .subscribe()

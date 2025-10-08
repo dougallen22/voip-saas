@@ -122,6 +122,23 @@ export async function POST(request: Request) {
 
     console.log('✅ Call parked successfully:', parkedCall.id)
 
+    // Broadcast ring event to clear incoming call UI on all screens
+    // This is similar to when a call is answered - we want to clear all incoming call UIs
+    const { error: ringEventError } = await adminClient
+      .from('ring_events')
+      .insert({
+        call_sid: callSid,
+        agent_id: userId,
+        event_type: 'parked'
+      })
+
+    if (ringEventError) {
+      console.error('Warning: Failed to broadcast park ring event:', ringEventError)
+      // Don't fail the park - event is just for UI coordination
+    } else {
+      console.log('📡 Broadcast park event to clear incoming call UIs on all screens')
+    }
+
     return NextResponse.json({
       success: true,
       parkedCallId: parkedCall.id,
