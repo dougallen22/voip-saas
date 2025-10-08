@@ -695,7 +695,7 @@ export default function CallingDashboard() {
       try {
         // Get caller number from parked call
         const parkedCall = getParkedCall(parkedCallId)
-        const callerNumber = parkedCall?.callerNumber || 'Unknown'
+        const callerNumber = parkedCall?.callerId || 'Unknown'
 
         // IMMEDIATELY show optimistic "transferring..." UI in target agent card
         setOptimisticTransferMap({
