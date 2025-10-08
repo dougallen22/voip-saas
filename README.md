@@ -152,24 +152,77 @@ git push origin main
 
 1. Go to [vercel.com](https://vercel.com)
 2. Import your GitHub repository
-3. Add all environment variables from `.env.local`
+3. **CRITICAL**: Add all environment variables from `.env.local` **one by one**
+   - Make sure to select **ALL THREE environments** (Production, Preview, Development) for each variable
+   - Copy keys directly from Supabase dashboard to avoid spacing issues
+   - For `SUPABASE_SERVICE_ROLE_KEY`: Copy from Supabase → Settings → API → `service_role` `secret` key
+   - For `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Copy from Supabase → Settings → API → `anon` `public` key
 4. Deploy
 
-### 3. Update Twilio Webhooks
+### 3. Disable Vercel Deployment Protection
 
-After deployment, update your Twilio phone number webhook to:
-```
-https://your-app-name.vercel.app/api/twilio/voice
+**IMPORTANT**: Twilio webhooks cannot pass through Vercel Authentication
+
+1. Go to Settings → Deployment Protection
+2. Under "Vercel Authentication", **disable** it for Production
+3. Click Save
+
+### 4. Update Twilio Webhooks
+
+After deployment, note your **primary Vercel domain** (e.g., `voip-saas.vercel.app`)
+
+Update your Twilio phone number webhook:
+```bash
+# Use the PRIMARY domain (voip-saas.vercel.app), NOT the deployment-specific URL
+https://voip-saas.vercel.app/api/twilio/voice
 ```
 
-### 4. Update Environment Variable
+You can update it via Twilio Console or using curl:
+```bash
+curl -X POST "https://api.twilio.com/2010-04-01/Accounts/YOUR_ACCOUNT_SID/IncomingPhoneNumbers/YOUR_PHONE_SID.json" \
+  -u "YOUR_ACCOUNT_SID:YOUR_AUTH_TOKEN" \
+  -d "VoiceUrl=https://voip-saas.vercel.app/api/twilio/voice" \
+  -d "VoiceMethod=POST"
+```
+
+### 5. Update Environment Variable
 
 In Vercel Dashboard, update:
 ```
-NEXT_PUBLIC_APP_URL=https://your-app-name.vercel.app
+NEXT_PUBLIC_APP_URL=https://voip-saas.vercel.app
 ```
 
-Redeploy to apply changes.
+**Use the primary domain** (e.g., `voip-saas.vercel.app`), not the deployment-specific URL.
+
+### 6. Redeploy
+
+After updating environment variables, redeploy to apply changes.
+
+## Troubleshooting Deployment
+
+### Issue: "Invalid API key" errors in Vercel logs
+
+**Cause**: Environment variables contain extra spaces or line breaks
+
+**Fix**:
+1. Delete `SUPABASE_SERVICE_ROLE_KEY` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` from Vercel
+2. Copy keys directly from Supabase dashboard (use the copy button)
+3. Paste into Vercel ensuring no extra spaces before/after
+4. Make sure all three environments are checked
+5. Redeploy
+
+### Issue: Calls not appearing in Vercel logs
+
+**Causes**:
+1. **Vercel Deployment Protection is enabled** - Disable it in Settings → Deployment Protection
+2. **Twilio webhook points to wrong URL** - Use primary domain (e.g., `voip-saas.vercel.app`), not deployment-specific URLs
+3. **Stale code deployment** - Force rebuild with `git commit --allow-empty -m "Force rebuild" && git push`
+
+### Issue: Build fails with "Dynamic server usage" error
+
+**Fix**: All API routes must export `export const dynamic = 'force-dynamic'`
+
+This has been added to all routes in this project.
 
 ## Usage
 
