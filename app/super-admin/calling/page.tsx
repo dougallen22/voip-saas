@@ -286,6 +286,14 @@ export default function CallingDashboard() {
           const event = payload.new as any
           console.log('📢 Ring event received:', event)
 
+          // If incoming transfer is targeting this agent
+          if (event.event_type === 'transfer_start' && event.agent_id === currentUserId) {
+            console.log('🎯 Transfer incoming - preparing to receive call in my card only')
+            pendingTransferToRef.current = currentUserId
+            setPendingTransferTo(currentUserId)
+            console.log(`✅ Set pendingTransferToRef.current = ${currentUserId}`)
+          }
+
           // If someone else answered, cancel our incoming ring
           if (event.event_type === 'answered' && event.agent_id !== currentUserId) {
             console.log('🚫 Another agent answered, canceling our ring')

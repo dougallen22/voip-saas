@@ -54,6 +54,20 @@ export async function POST(request: Request) {
     // The twilio_participant_sid is the PSTN call SID
     const pstnCallSid = parkedCall.twilio_participant_sid
 
+    // Signal to target agent's browser that a transfer is incoming
+    // This happens BEFORE the Twilio redirect so the browser is ready
+    const { error: ringEventError } = await adminClient.from('ring_events').insert({
+      call_sid: parkedCall.twilio_conference_sid || pstnCallSid,
+      agent_id: newAgentId,
+      event_type: 'transfer_start'
+    })
+
+    if (ringEventError) {
+      console.error('Warning: Failed to create transfer_start ring event:', ringEventError)
+    } else {
+      console.log(`📡 Sent transfer_start ring event to agent: ${newAgentId}`)
+    }
+
     // Verify the PSTN call is still active
     let pstnCall
     try {
