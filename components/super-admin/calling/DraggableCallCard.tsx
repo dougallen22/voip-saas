@@ -14,6 +14,7 @@ interface DraggableCallCardProps {
   agentName: string
   onEndCall?: () => void
   onTransfer?: () => void
+  onRemoveParked?: () => void
   isParked?: boolean
 }
 
@@ -27,6 +28,7 @@ export default function DraggableCallCard({
   agentName,
   onEndCall,
   onTransfer,
+  onRemoveParked,
   isParked = false,
 }: DraggableCallCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -111,10 +113,11 @@ export default function DraggableCallCard({
           )}
         </div>
 
-        {/* Action buttons - only show when not dragging and not parked */}
-        {!isDragging && !isParked && (
+        {/* Action buttons */}
+        {!isDragging && (
           <div className="flex flex-col gap-2">
-            {onTransfer && (
+            {/* Show Transfer & End Call for active calls */}
+            {!isParked && onTransfer && (
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -125,7 +128,7 @@ export default function DraggableCallCard({
                 Transfer
               </button>
             )}
-            {onEndCall && (
+            {!isParked && onEndCall && (
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -134,6 +137,22 @@ export default function DraggableCallCard({
                 className="bg-white text-red-600 hover:bg-red-50 px-3 py-1 rounded-md text-sm font-semibold transition-colors"
               >
                 End Call
+              </button>
+            )}
+            {/* Show Remove button for parked calls */}
+            {isParked && onRemoveParked && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRemoveParked()
+                }}
+                className="bg-red-600 text-white hover:bg-red-700 px-3 py-1 rounded-md text-sm font-semibold transition-colors flex items-center gap-1"
+                title="Remove stuck call from parking lot"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Remove
               </button>
             )}
           </div>

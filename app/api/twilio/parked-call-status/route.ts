@@ -10,15 +10,23 @@ export async function POST(request: Request) {
     const callSid = formData.get('CallSid') as string
     const dialCallStatus = formData.get('DialCallStatus') as string
     const callStatus = formData.get('CallStatus') as string
+    const callDuration = formData.get('CallDuration') as string
+    const from = formData.get('From') as string
+    const to = formData.get('To') as string
 
-    console.log('📞 Parked call status update:', {
-      callSid,
-      dialCallStatus,
-      callStatus,
-      allParams: Object.fromEntries(formData)
-    })
+    // Log EVERYTHING for debugging
+    console.log('📞 ===== PARKED CALL STATUS WEBHOOK =====')
+    console.log('CallSid:', callSid)
+    console.log('DialCallStatus:', dialCallStatus)
+    console.log('CallStatus:', callStatus)
+    console.log('CallDuration:', callDuration)
+    console.log('From:', from)
+    console.log('To:', to)
+    console.log('All Parameters:', Object.fromEntries(formData))
+    console.log('==========================================')
 
     if (!callSid) {
+      console.error('❌ No CallSid provided in webhook')
       return NextResponse.json({ error: 'CallSid required' }, { status: 400 })
     }
 
@@ -27,34 +35,67 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Find the parked call by the PSTN call SID (twilio_participant_sid)
-    const { data: parkedCalls } = await adminClient
+    // Try multiple ways to find the parked call
+    console.log('🔍 Searching for parked call...')
+
+    // Method 1: Find by twilio_participant_sid
+    const { data: parkedCallsByParticipant } = await adminClient
       .from('parked_calls')
       .select('*')
       .eq('twilio_participant_sid', callSid)
 
-    console.log('Found parked calls:', parkedCalls)
+    console.log('Method 1 (twilio_participant_sid):', parkedCallsByParticipant?.length || 0, 'found')
 
-    // If call ended (completed, no-answer, failed, busy, canceled), remove from parking lot
-    if (dialCallStatus === 'completed' || dialCallStatus === 'no-answer' ||
-        dialCallStatus === 'failed' || dialCallStatus === 'busy' ||
-        dialCallStatus === 'canceled' || callStatus === 'completed') {
+    // Method 2: Find by twilio_conference_sid
+    const { data: parkedCallsByConference } = await adminClient
+      .from('parked_calls')
+      .select('*')
+      .eq('twilio_conference_sid', callSid)
 
-      console.log('🗑️ Call ended - removing from parking lot')
+    console.log('Method 2 (twilio_conference_sid):', parkedCallsByConference?.length || 0, 'found')
 
-      if (parkedCalls && parkedCalls.length > 0) {
-        for (const parkedCall of parkedCalls) {
-          await adminClient
-            .from('parked_calls')
-            .delete()
-            .eq('id', parkedCall.id)
+    // Combine results
+    const allFound = [
+      ...(parkedCallsByParticipant || []),
+      ...(parkedCallsByConference || [])
+    ]
 
-          console.log('✅ Removed parked call from database:', parkedCall.id)
+    // Deduplicate by ID
+    const parkedCalls = Array.from(
+      new Map(allFound.map(call => [call.id, call])).values()
+    )
+
+    console.log('Total unique parked calls found:', parkedCalls.length)
+
+    if (parkedCalls.length === 0) {
+      console.warn('⚠️ No parked calls found for CallSid:', callSid)
+      console.log('This might be normal if the call was already unparked or never parked')
+    }
+
+    // Delete on ANY Dial end (not just specific statuses)
+    // This catches edge cases where Twilio sends unexpected status values
+    console.log('🗑️ Dial ended - removing from parking lot (status:', dialCallStatus || callStatus, ')')
+
+    if (parkedCalls && parkedCalls.length > 0) {
+      for (const parkedCall of parkedCalls) {
+        const { error: deleteError } = await adminClient
+          .from('parked_calls')
+          .delete()
+          .eq('id', parkedCall.id)
+
+        if (deleteError) {
+          console.error('❌ Error deleting parked call:', parkedCall.id, deleteError)
+        } else {
+          console.log('✅ Deleted parked call:', parkedCall.id)
         }
       }
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({
+      success: true,
+      deleted: parkedCalls.length,
+      callSid: callSid
+    })
   } catch (error: any) {
     console.error('❌ Error handling parked call status:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })

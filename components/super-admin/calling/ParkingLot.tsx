@@ -12,6 +12,7 @@ interface ParkingLotProps {
 
 export default function ParkingLot({ onUnpark }: ParkingLotProps) {
   const parkedCalls = useCallParkingStore((state) => state.parkedCalls)
+  const removeParkedCall = useCallParkingStore((state) => state.removeParkedCall)
   const [parkDurations, setParkDurations] = useState<Map<string, number>>(new Map())
 
   const { setNodeRef, isOver } = useDroppable({
@@ -37,6 +38,38 @@ export default function ParkingLot({ onUnpark }: ParkingLotProps) {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const handleRemoveParkedCall = async (parkedCallId: string) => {
+    if (!confirm('Remove this call from the parking lot? The caller will be disconnected.')) {
+      return
+    }
+
+    try {
+      console.log('🗑️ Removing parked call from database:', parkedCallId)
+
+      const response = await fetch('/api/admin/cleanup-parked-calls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete_one',
+          parkedCallId: parkedCallId
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        console.log('✅ Parked call removed from database')
+        // The DELETE event subscription will remove it from Zustand
+      } else {
+        console.error('Failed to remove parked call:', result.error)
+        alert('Failed to remove call: ' + result.error)
+      }
+    } catch (error) {
+      console.error('Error removing parked call:', error)
+      alert('Failed to remove call')
+    }
   }
 
   const parkedCallsArray = Array.from(parkedCalls.values())
@@ -86,6 +119,7 @@ export default function ParkingLot({ onUnpark }: ParkingLotProps) {
                 agentId={call.parkedBy}
                 agentName={call.parkedByName || 'Unknown'}
                 isParked={true}
+                onRemoveParked={() => handleRemoveParkedCall(call.id)}
               />
             ))}
           </div>

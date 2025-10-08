@@ -158,6 +158,26 @@ export default function CallingDashboard() {
     fetchCalls()
     fetchCurrentUserRole()
 
+    // Clean up old parked calls (older than 30 minutes) on page load
+    const cleanupOldParkedCalls = async () => {
+      try {
+        console.log('🧹 Checking for old parked calls to clean up...')
+        const response = await fetch('/api/admin/cleanup-parked-calls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'delete_old' })
+        })
+
+        const result = await response.json()
+        if (result.success) {
+          console.log('✅', result.message)
+        }
+      } catch (error) {
+        console.error('Warning: Could not cleanup old parked calls:', error)
+        // Don't fail page load if cleanup fails
+      }
+    }
+
     // Fetch existing parked calls on mount
     const fetchParkedCalls = async () => {
       try {
@@ -179,7 +199,8 @@ export default function CallingDashboard() {
       }
     }
 
-    fetchParkedCalls()
+    // Run cleanup then fetch
+    cleanupOldParkedCalls().then(() => fetchParkedCalls())
 
     // Subscribe to voip_users changes
     const usersChannel = supabase
