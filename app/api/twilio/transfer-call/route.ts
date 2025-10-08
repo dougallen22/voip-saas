@@ -7,6 +7,9 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN!
 )
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: Request) {
   try {
     const { callSid, targetAgentId, callerNumber } = await request.json()

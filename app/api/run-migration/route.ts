@@ -3,6 +3,9 @@ import { NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic'
+
 export async function POST() {
   try {
     const supabase = createClient(

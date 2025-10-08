@@ -3,6 +3,9 @@ import twilio from 'twilio'
 
 const VoiceResponse = twilio.twiml.VoiceResponse
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic'
+
 export async function POST() {
   const twiml = new VoiceResponse()
 

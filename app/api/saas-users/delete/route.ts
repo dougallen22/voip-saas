@@ -1,6 +1,9 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic'
+
 export async function DELETE(request: Request) {
   try {
     const { userId } = await request.json()

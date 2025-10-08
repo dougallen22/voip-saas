@@ -1,6 +1,9 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic'
+
 export async function PATCH(request: Request) {
   try {
     const { userId, is_available, full_name } = await request.json()

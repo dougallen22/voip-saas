@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: Request) {
   try {
     const { searchParams } = new URL(request.url)

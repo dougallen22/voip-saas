@@ -5,6 +5,9 @@ import { NextResponse } from 'next/server'
  * Clean up orphaned voip_users records (users that exist in voip_users but not in auth.users)
  * This can happen if CASCADE constraints aren't working properly
  */
+// Force dynamic rendering
+export const dynamic = 'force-dynamic'
+
 export async function POST() {
   try {
     console.log('🧹 CLEANUP: Starting orphaned users cleanup...')
