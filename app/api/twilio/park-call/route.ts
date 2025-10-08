@@ -70,6 +70,36 @@ export async function POST(request: Request) {
     const holdMusicUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://8336d5b13c1c.ngrok-free.app'}/api/twilio/hold-music`
     const parkTwimlUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://8336d5b13c1c.ngrok-free.app'}/api/twilio/park-twiml?conference=${encodeURIComponent(conferenceName)}`
 
+    // Store in database FIRST before redirecting call
+    // This ensures the INSERT event fires immediately and all UIs update
+    // Note: We store the conference name but not the SIDs since the conference
+    // hasn't been created yet. We'll update these later via webhook if needed.
+    console.log('📝 Inserting parked call into database...')
+    const { data: parkedCall, error: dbError } = await adminClient
+      .from('parked_calls')
+      .insert({
+        call_id: callId,
+        twilio_conference_sid: null, // Will be populated when conference is created
+        twilio_participant_sid: pstnCallSid, // The PSTN call that will join
+        parked_by_user_id: userId,
+        caller_number: callerNumber,
+        original_agent_id: userId,
+        metadata: {
+          conference_name: conferenceName,
+          hold_music_url: holdMusicUrl,
+          pstn_call_sid: pstnCallSid,
+        },
+      })
+      .select()
+      .single()
+
+    if (dbError) {
+      console.error('Database error:', dbError)
+      throw new Error(`Database error: ${dbError.message}`)
+    }
+
+    console.log('✅ Parked call inserted into database - all screens should show it now')
+
     console.log('Redirecting PSTN call to conference:', conferenceName)
 
     // Redirect the PSTN parent call to TwiML that will put it in a conference
@@ -94,50 +124,7 @@ export async function POST(request: Request) {
     // We don't need to wait for it - Twilio will handle the conference creation
     console.log('✅ Call park initiated - conference will be created when call redirects')
 
-    // Store in database
-    // Note: We store the conference name but not the SIDs since the conference
-    // hasn't been created yet. We'll update these later via webhook if needed.
-    const { data: parkedCall, error: dbError } = await adminClient
-      .from('parked_calls')
-      .insert({
-        call_id: callId,
-        twilio_conference_sid: null, // Will be populated when conference is created
-        twilio_participant_sid: pstnCallSid, // The PSTN call that will join
-        parked_by_user_id: userId,
-        caller_number: callerNumber,
-        original_agent_id: userId,
-        metadata: {
-          conference_name: conferenceName,
-          hold_music_url: holdMusicUrl,
-          pstn_call_sid: pstnCallSid,
-        },
-      })
-      .select()
-      .single()
-
-    if (dbError) {
-      console.error('Database error:', dbError)
-      throw new Error(`Database error: ${dbError.message}`)
-    }
-
     console.log('✅ Call parked successfully:', parkedCall.id)
-
-    // Broadcast ring event to clear incoming call UI on all screens
-    // This is similar to when a call is answered - we want to clear all incoming call UIs
-    const { error: ringEventError } = await adminClient
-      .from('ring_events')
-      .insert({
-        call_sid: callSid,
-        agent_id: userId,
-        event_type: 'parked'
-      })
-
-    if (ringEventError) {
-      console.error('Warning: Failed to broadcast park ring event:', ringEventError)
-      // Don't fail the park - event is just for UI coordination
-    } else {
-      console.log('📡 Broadcast park event to clear incoming call UIs on all screens')
-    }
 
     return NextResponse.json({
       success: true,

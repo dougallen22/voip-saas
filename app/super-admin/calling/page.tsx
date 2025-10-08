@@ -241,6 +241,11 @@ export default function CallingDashboard() {
           console.log('🚗 NEW PARKED CALL:', payload)
           if (payload.new) {
             addParkedCallFromDb(payload.new)
+
+            // Clear incoming call UI when a call is parked
+            // This ensures Doug's screen clears immediately when Rhonda parks a call
+            console.log('🧹 Clearing incoming call UI - call was parked')
+            setIncomingCallMap({})
           }
         }
       )
@@ -327,12 +332,6 @@ export default function CallingDashboard() {
           // If caller hung up before anyone answered
           if (event.event_type === 'ring_cancel') {
             console.log('🚫 Caller hung up - clearing all incoming call UIs')
-            setIncomingCallMap({}) // Clear incoming call UI for all agents
-          }
-
-          // If call was parked, clear incoming call UI on all screens
-          if (event.event_type === 'parked') {
-            console.log('🚗 Call parked - clearing incoming call UI on all screens')
             setIncomingCallMap({}) // Clear incoming call UI for all agents
           }
         }
