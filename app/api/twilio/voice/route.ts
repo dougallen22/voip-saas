@@ -17,6 +17,13 @@ export async function POST(request: Request) {
     console.log('To:', to)
     console.log('====================')
 
+    console.log('🔍 ENV CHECK:', {
+      hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+      hasKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      urlLength: process.env.NEXT_PUBLIC_SUPABASE_URL?.length,
+      keyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length,
+    })
+
     const adminClient = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -34,7 +41,8 @@ export async function POST(request: Request) {
     console.log('📞 INCOMING CALL - Available agents:', {
       count: availableAgents?.length || 0,
       agents: availableAgents?.map(a => ({ id: a.id, name: a.full_name })) || [],
-      error: agentError
+      error: agentError,
+      errorDetails: agentError ? JSON.stringify(agentError) : null
     })
 
     const twiml = new VoiceResponse()
