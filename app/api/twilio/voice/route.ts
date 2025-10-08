@@ -20,26 +20,10 @@ export async function POST(request: Request) {
     console.log('To:', to)
     console.log('====================')
 
-    console.log('🔍 ENV CHECK:', {
-      hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-      hasKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-      urlLength: process.env.NEXT_PUBLIC_SUPABASE_URL?.length,
-      keyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length,
-      keyFirst20: process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 20),
-      keyLast20: process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(process.env.SUPABASE_SERVICE_ROLE_KEY.length - 20),
-    })
-
-    // Hardcode the working key temporarily for debugging
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zcosbiwvstrwmyioqdjw.supabase.co'
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpjb3NiaXd2c3Ryd215aW9xZGp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTg0MTQxMSwiZXhwIjoyMDc1NDE3NDExfQ.VRSTyXAQC9QH_cVP40WxAYmfnJFlKCBGYD2XyvtKQtc'
-
-    console.log('🔧 USING:', {
-      url: supabaseUrl,
-      keyLength: supabaseKey.length,
-      keyFirst20: supabaseKey.substring(0, 20)
-    })
-
-    const adminClient = createAdminClient(supabaseUrl, supabaseKey)
+    const adminClient = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
 
     // Find ALL available agents (multi-agent simultaneous ring)
     const { data: availableAgents, error: agentError } = await adminClient
