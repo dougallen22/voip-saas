@@ -635,31 +635,16 @@ export default function CallingDashboard() {
 
         console.log('About to park call:', { callSid, callerNumber })
 
-        // Optimistically add to parking lot
-        const parkedCall = {
-          id: `parked-${Date.now()}`,
-          callObject: null, // No longer have active call object
-          callerId: callerNumber || 'Unknown',
-          callerName: undefined,
-          parkedAt: new Date(),
-          parkedBy: currentUserId || 'unknown',
-          parkedByName: users.find(u => u.id === currentUserId)?.full_name,
-          conferenceSid: null,
-          participantSid: null,
-          holdMusicUrl: '',
-          originalAgentId: currentUserId || undefined,
-        }
-
-        addParkedCall(parkedCall)
-
         // Clear any lingering incoming call UI from when this call first rang
         setIncomingCallMap({})
         console.log('🧹 Cleared incoming call map (parking call)')
 
-        // Call park API FIRST - this will redirect the PSTN parent call to conference
+        // Call park API - this will:
+        // 1. Insert into database (all browsers will see INSERT event via Supabase realtime)
+        // 2. Redirect the PSTN parent call to conference/hold music
         // IMPORTANT: Do NOT disconnect browser client before this!
         // When the PSTN call is redirected, the browser leg will naturally disconnect
-        console.log('Redirecting PSTN call to hold music...')
+        console.log('Parking call - will appear in parking lot via database INSERT event...')
         const response = await fetch('/api/twilio/park-call', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -674,21 +659,8 @@ export default function CallingDashboard() {
         const data = await response.json()
 
         if (!response.ok) {
-          // Rollback on error
-          removeParkedCall(parkedCall.id)
           throw new Error(data.error || 'Failed to park call')
         }
-
-        // Update with real IDs from server
-        const realParkedCall = {
-          ...parkedCall,
-          id: data.parkedCallId,
-          conferenceSid: data.conferenceName, // Store conference name for now
-          participantSid: data.pstnCallSid,
-        }
-
-        removeParkedCall(parkedCall.id)
-        addParkedCall(realParkedCall)
 
         console.log('✅ Call parked successfully - caller will hear hold music')
 
