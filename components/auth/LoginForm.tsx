@@ -29,10 +29,13 @@ export default function LoginForm() {
       if (!response.ok) {
         setError(data.error || 'Login failed')
       } else {
-        // Redirect based on role - all SaaS users go to calling dashboard
-        if (data.role === 'super_admin' || (data.role === 'agent' && !data.organization_id)) {
-          // SaaS users (super_admin or agent without organization)
-          router.push('/super-admin/calling')
+        // Redirect based on role
+        if (data.role === 'super_admin') {
+          // Super admins → super admin dashboard (they click to go to calling)
+          router.push('/super-admin/dashboard')
+        } else if (data.role === 'agent' && !data.organization_id) {
+          // SaaS agents → agent dashboard (they click to go to calling)
+          router.push('/agent/dashboard')
         } else {
           // Tenant admin or agent with organization
           router.push('/dashboard')
