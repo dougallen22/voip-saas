@@ -268,6 +268,13 @@ export default function CallingDashboard() {
               upsertActiveCall(newRow)
             } else {
               removeActiveCallForUser(newRow.id)
+
+              // Clear incoming call UI if this user was showing an incoming call
+              setIncomingCallMap(prev => {
+                const updated = { ...prev }
+                delete updated[newRow.id]
+                return updated
+              })
             }
 
             setUsers(prev => {
