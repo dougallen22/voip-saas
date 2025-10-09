@@ -103,15 +103,21 @@ export async function POST(request: Request) {
     // Update active_calls table with 'parked' status
     // This will trigger instant incoming call clearing on all screens via subscription
     console.log('📝 Updating active_calls status to parked...')
+
+    // First delete all existing active_calls for this call (from all agents)
+    await adminClient
+      .from('active_calls')
+      .delete()
+      .eq('call_sid', pstnCallSid)
+
+    // Then insert new parked entry
     const { error: activeCallError } = await adminClient
       .from('active_calls')
-      .upsert({
+      .insert({
         call_sid: pstnCallSid,
         agent_id: userId,
         caller_number: callerNumber,
         status: 'parked',
-      }, {
-        onConflict: 'call_sid'
       })
 
     if (activeCallError) {

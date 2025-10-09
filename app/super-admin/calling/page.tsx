@@ -344,6 +344,21 @@ export default function CallingDashboard() {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'active_calls',
+        },
+        (payload) => {
+          console.log('📍 ACTIVE CALL DELETE:', payload)
+          // When another agent answers, their active_calls row gets updated to 'active'
+          // and OUR row gets DELETED. This should clear our incoming call UI.
+          console.log('🧹 INSTANT CLEAR: Active call deleted (another agent answered) - clearing incoming call UI')
+          setIncomingCallMap({})
+        }
+      )
       .subscribe()
 
     return () => {
