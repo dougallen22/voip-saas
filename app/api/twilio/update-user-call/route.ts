@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import twilio from 'twilio'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,23 +23,51 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
+    const twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID!,
+      process.env.TWILIO_AUTH_TOKEN!
+    )
+
     if (action === 'start') {
-      // Get the call record to get the call ID
+      // The callSid we receive is from the browser client (child call)
+      // We need to get the parent call (PSTN caller) - SAME AS PARKING LOT!
+      let pstnCallSid = callSid
+
+      try {
+        const call = await twilioClient.calls(callSid).fetch()
+        console.log('Fetched browser client call:', {
+          sid: call.sid,
+          parentCallSid: call.parentCallSid,
+          direction: call.direction
+        })
+
+        // If this is a client call with a parent, use the parent SID
+        if (call.parentCallSid) {
+          pstnCallSid = call.parentCallSid
+          console.log('✅ Using parent call SID:', pstnCallSid)
+        }
+      } catch (fetchError: any) {
+        console.log('⚠️ Could not fetch call details, using original SID:', fetchError.message)
+      }
+
+      // Get the call record using the PSTN call SID
       const { data: callRecord, error: callFetchError } = await adminClient
         .from('calls')
         .select('id')
-        .eq('twilio_call_sid', callSid)
+        .eq('twilio_call_sid', pstnCallSid)
         .single()
 
       if (callFetchError || !callRecord) {
         console.error('❌ Failed to fetch call record:', callFetchError)
+        console.error('Searched for twilio_call_sid:', pstnCallSid)
         return NextResponse.json({
           success: false,
-          error: 'Call not found'
+          error: 'Call not found in database'
         }, { status: 404 })
       }
 
       const callId = callRecord.id
+      console.log('✅ Found call record:', { callId, pstnCallSid })
 
       // Update voip_users to set current_call_id
       const { error: updateUserError } = await adminClient
@@ -76,6 +105,20 @@ export async function POST(request: Request) {
       })
 
     } else if (action === 'end') {
+      // The callSid we receive is from the browser client (child call)
+      // We need to get the parent call (PSTN caller) - SAME AS PARKING LOT!
+      let pstnCallSid = callSid
+
+      try {
+        const call = await twilioClient.calls(callSid).fetch()
+        if (call.parentCallSid) {
+          pstnCallSid = call.parentCallSid
+          console.log('✅ Using parent call SID for disconnect:', pstnCallSid)
+        }
+      } catch (fetchError: any) {
+        console.log('⚠️ Could not fetch call details, using original SID:', fetchError.message)
+      }
+
       // Clear current_call_id for this agent
       const { error: updateUserError } = await adminClient
         .from('voip_users')
@@ -90,20 +133,20 @@ export async function POST(request: Request) {
         }, { status: 500 })
       }
 
-      // Update call status to 'completed'
+      // Update call status to 'completed' using PSTN call SID
       const { error: updateCallError } = await adminClient
         .from('calls')
         .update({
           status: 'completed',
           ended_at: new Date().toISOString()
         })
-        .eq('twilio_call_sid', callSid)
+        .eq('twilio_call_sid', pstnCallSid)
 
       if (updateCallError) {
         console.error('❌ Failed to update call status:', updateCallError)
       }
 
-      console.log('✅ Database updated - current_call_id cleared for agent', { agentId, callSid })
+      console.log('✅ Database updated - current_call_id cleared for agent', { agentId, pstnCallSid })
 
       return NextResponse.json({
         success: true
