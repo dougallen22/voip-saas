@@ -15,7 +15,13 @@ export async function GET() {
     // Get all SaaS users (organization_id IS NULL AND role = 'agent' OR 'super_admin')
     const { data: voipUsers, error: voipError } = await adminClient
       .from('voip_users')
-      .select('*')
+      .select(`
+        *,
+        calls:current_call_id (
+          from_number,
+          answered_at
+        )
+      `)
       .is('organization_id', null)
       .in('role', ['agent', 'super_admin'])
       .order('created_at', { ascending: false })
@@ -34,6 +40,12 @@ export async function GET() {
     // Merge auth and voip data
     const saasUsers = voipUsers.map(voipUser => {
       const authUser = users?.find(u => u.id === voipUser.id)
+      const relatedCall = (voipUser as any).calls as { from_number?: string | null, answered_at?: string | null } | null
+      const currentCallPhoneNumber =
+        voipUser.current_call_phone_number ??
+        relatedCall?.from_number ??
+        null
+
       return {
         id: voipUser.id,
         email: authUser?.email || 'N/A',
@@ -41,6 +53,8 @@ export async function GET() {
         role: voipUser.role,
         is_available: voipUser.is_available,
         current_call_id: voipUser.current_call_id,
+        current_call_phone_number: currentCallPhoneNumber,
+        current_call_answered_at: relatedCall?.answered_at ?? null,
         created_at: voipUser.created_at,
       }
     })

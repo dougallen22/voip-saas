@@ -8,6 +8,7 @@ import ParkingLot from '@/components/super-admin/calling/ParkingLot'
 import DraggableCallCard from '@/components/super-admin/calling/DraggableCallCard'
 import { useTwilioDevice } from '@/hooks/useTwilioDevice'
 import { useCallParkingStore } from '@/lib/stores/callParkingStore'
+import { useCallActiveStore } from '@/lib/stores/callActiveStore'
 import {
   DndContext,
   DragEndEvent,
@@ -24,6 +25,8 @@ interface SaaSUser {
   full_name: string
   is_available: boolean
   current_call_id?: string
+  current_call_phone_number?: string | null
+  current_call_answered_at?: string | null
 }
 
 interface IncomingCall {
@@ -50,8 +53,11 @@ export default function CallingDashboard() {
     callerNumber: string | null
   } | null>(null)
   const [processedTransferCallSids, setProcessedTransferCallSids] = useState<Set<string>>(new Set())
-  // Store active call data for ALL users (not just current user)
-  const [userActiveCalls, setUserActiveCalls] = useState<Record<string, any>>({})
+  const activeCallsByUser = useCallActiveStore(state => state.activeCalls)
+  const hydrateActiveCalls = useCallActiveStore(state => state.hydrateFromUsers)
+  const upsertActiveCall = useCallActiveStore(state => state.upsertFromVoipUser)
+  const removeActiveCallForUser = useCallActiveStore(state => state.removeForUser)
+  const syncActiveCallFromRow = useCallActiveStore(state => state.syncFromCallRow)
   const [optimisticTransferMap, setOptimisticTransferMap] = useState<Record<string, { callerNumber: string, isLoading: boolean }>>({}) // Show "transferring..." immediately
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null) // Track current user's role
   const supabase = createClient()
@@ -85,66 +91,23 @@ export default function CallingDashboard() {
     })
   )
 
-  // Fetch ALL calls (ringing, active, parked) - UNIFIED VIEW FOR ALL USERS
-  // CRITICAL: Use current_call_id as source of truth (like parking lot uses parked_calls table)
-  const fetchAllActiveCalls = async () => {
+  const fetchRingingCalls = async () => {
     try {
-      // Fetch users with active calls by joining voip_users → calls via current_call_id
-      // This is the SAME pattern as parking lot: dedicated field points to call record
-      const { data: usersWithCalls, error: usersError } = await supabase
-        .from('voip_users')
-        .select(`
-          id,
-          email,
-          current_call_id,
-          calls:current_call_id (
-            id,
-            twilio_call_sid,
-            from_number,
-            to_number,
-            status,
-            answered_at,
-            assigned_to
-          )
-        `)
-        .not('current_call_id', 'is', null)
-
-      if (usersError) {
-        console.error('Error fetching users with calls:', usersError)
-        return
-      }
-
-      console.log('🔄 UNIFIED VIEW: Fetched users with active calls:', usersWithCalls)
-
-      // Map calls by user ID (source of truth: current_call_id)
-      const callMap: Record<string, any> = {}
-      usersWithCalls?.forEach((user: any) => {
-        if (user.calls) {
-          callMap[user.id] = user.calls
-          console.log(`✅ User ${user.email} has active call from ${user.calls.from_number}`)
-        }
-      })
-
-      setUserActiveCalls(callMap)
-      console.log('📞 Active calls by user (via current_call_id):', callMap)
-
-      // Separately fetch ringing calls (not yet assigned)
-      const { data: calls, error: callsError } = await supabase
+      const { data: calls, error } = await supabase
         .from('calls')
         .select('*')
         .eq('status', 'ringing')
         .order('created_at', { ascending: false })
 
-      if (callsError) {
-        console.error('Error fetching ringing calls:', callsError)
-      } else {
-        const ringingCalls = calls || []
-        setIncomingCalls(ringingCalls)
-        console.log('📞 Incoming (ringing) calls:', ringingCalls)
+      if (error) {
+        console.error('Error fetching ringing calls:', error)
+        return
       }
 
+      setIncomingCalls(calls || [])
+      console.log('📞 Incoming (ringing) calls:', calls || [])
     } catch (error) {
-      console.error('Error in fetchAllActiveCalls:', error)
+      console.error('Error in fetchRingingCalls:', error)
     }
   }
 
@@ -162,11 +125,19 @@ export default function CallingDashboard() {
       }
 
       const data = await response.json()
-      const fetchedUsers = data.users || []
+      const fetchedUsers: SaaSUser[] = data.users || []
       setUsers(fetchedUsers)
 
-      // Fetch ALL active calls from database - UNIFIED VIEW
-      fetchAllActiveCalls()
+      hydrateActiveCalls(
+        fetchedUsers.map((user) => ({
+          userId: user.id,
+          currentCallId: user.current_call_id,
+          currentCallPhoneNumber: user.current_call_phone_number,
+          currentCallAnsweredAt: user.current_call_answered_at,
+        }))
+      )
+
+      fetchRingingCalls()
     } catch (error) {
       console.error('Error fetching users:', error)
 
@@ -183,8 +154,6 @@ export default function CallingDashboard() {
       }
     }
   }
-
-  // NOTE: fetchCalls removed - now using fetchAllActiveCalls for UNIFIED VIEW
 
   const fetchCurrentUserRole = async () => {
     try {
@@ -209,7 +178,7 @@ export default function CallingDashboard() {
   }
 
   useEffect(() => {
-    fetchUsers() // This now calls fetchAllActiveCalls() for unified view
+    fetchUsers()
     fetchCurrentUserRole()
 
     // Clean up old parked calls (older than 30 minutes) on page load
@@ -268,9 +237,18 @@ export default function CallingDashboard() {
         },
         (payload) => {
           console.log('🔄 UNIFIED: User update detected:', payload)
-          // Fetch users AND call details
+          if (payload.new) {
+            const newRow = payload.new as any
+            if (newRow.current_call_id) {
+              upsertActiveCall(newRow)
+            } else {
+              removeActiveCallForUser(newRow.id)
+            }
+          } else if (payload.old) {
+            removeActiveCallForUser((payload.old as any).id)
+          }
+
           fetchUsers()
-          fetchAllActiveCalls()
         }
       )
       .subscribe()
@@ -287,8 +265,18 @@ export default function CallingDashboard() {
         },
         (payload) => {
           console.log('🔄 UNIFIED: Call state changed:', payload)
-          // Refresh ALL calls for ALL users
-          fetchAllActiveCalls()
+          const callRow = (payload.new || payload.old) as any
+          if (callRow) {
+            syncActiveCallFromRow({
+              id: callRow.id,
+              status: callRow.status,
+              assigned_to: callRow.assigned_to,
+              from_number: callRow.from_number,
+              answered_at: callRow.answered_at,
+            })
+          }
+
+          fetchRingingCalls()
         }
       )
       .subscribe()
@@ -1089,63 +1077,65 @@ export default function CallingDashboard() {
           </div>
         ) : (
           <div className="grid md:grid-cols-3 gap-6">
-            {users.map(user => (
-              <AgentCard
-                key={user.id}
-                user={user}
-                onToggleAvailability={handleToggleAvailability}
-                onCall={handleCall}
-                activeCall={
-                  user.id === currentUserId
-                    ? activeCall  // Current user: use LOCAL Twilio Call object
-                    : (userActiveCalls[user.id]  // Other users: use call details from JOIN query
-                        ? { parameters: { From: userActiveCalls[user.id].from_number } }
-                        : null)
-                }
-                callStartTime={
-                  user.id === currentUserId
-                    ? callStartTime
-                    : (userActiveCalls[user.id]?.answered_at
-                        ? new Date(userActiveCalls[user.id].answered_at)
-                        : null)
-                }
-                incomingCall={incomingCallMap[user.id]}
-                optimisticTransfer={optimisticTransferMap[user.id]}
-                onAnswerCall={
-                  // Pass callback if this user has an incoming call (regular or transfer)
-                  incomingCallMap[user.id]
-                    ? (() => {
-                        console.log('🟢 PASS onAnswerCall: User has incoming call', {
-                          userId: user.id,
-                          userEmail: user.email,
-                          incomingCall: incomingCallMap[user.id]
-                        })
-                        return handleAnswerCall
-                      })()
-                    : (() => {
-                        console.log('⚪ SKIP onAnswerCall: No incoming call for user', {
-                          userId: user.id,
-                          userEmail: user.email
-                        })
-                        return undefined
-                      })()
-                }
-                onDeclineCall={
-                  // Pass callback if this user has an incoming call (regular or transfer)
-                  incomingCallMap[user.id]
-                    ? handleDeclineCall
-                    : undefined
-                }
-                activeCalls={user.id === currentUserId ? activeCalls : undefined}
-                selectedCallId={user.id === currentUserId ? selectedCallId : undefined}
-                onHoldCall={user.id === currentUserId ? holdCall : undefined}
-                onResumeCall={user.id === currentUserId ? resumeCall : undefined}
-                onEndCall={user.id === currentUserId ? endCall : undefined}
-                onTransfer={user.id === currentUserId && !transferMode?.active ? handleInitiateTransfer : undefined}
-                isTransferTarget={transferMode?.active && user.is_available && !user.current_call_id}
-                onClick={transferMode?.active && user.is_available && !user.current_call_id ? () => handleTransferToAgent(user.id) : undefined}
-              />
-            ))}
+            {users.map(user => {
+              const remoteActiveCall = activeCallsByUser.get(user.id)
+
+              return (
+                <AgentCard
+                  key={user.id}
+                  user={user}
+                  onToggleAvailability={handleToggleAvailability}
+                  onCall={handleCall}
+                  activeCall={
+                    user.id === currentUserId
+                      ? activeCall // Current user: use LOCAL Twilio Call object
+                      : (remoteActiveCall
+                          ? { parameters: { From: remoteActiveCall.callerNumber || 'Unknown' } }
+                          : null)
+                  }
+                  callStartTime={
+                    user.id === currentUserId
+                      ? callStartTime
+                      : remoteActiveCall?.answeredAt ?? null
+                  }
+                  incomingCall={incomingCallMap[user.id]}
+                  optimisticTransfer={optimisticTransferMap[user.id]}
+                  onAnswerCall={
+                    // Pass callback if this user has an incoming call (regular or transfer)
+                    incomingCallMap[user.id]
+                      ? (() => {
+                          console.log('🟢 PASS onAnswerCall: User has incoming call', {
+                            userId: user.id,
+                            userEmail: user.email,
+                            incomingCall: incomingCallMap[user.id]
+                          })
+                          return handleAnswerCall
+                        })()
+                      : (() => {
+                          console.log('⚪ SKIP onAnswerCall: No incoming call for user', {
+                            userId: user.id,
+                            userEmail: user.email
+                          })
+                          return undefined
+                        })()
+                  }
+                  onDeclineCall={
+                    // Pass callback if this user has an incoming call (regular or transfer)
+                    incomingCallMap[user.id]
+                      ? handleDeclineCall
+                      : undefined
+                  }
+                  activeCalls={user.id === currentUserId ? activeCalls : undefined}
+                  selectedCallId={user.id === currentUserId ? selectedCallId : undefined}
+                  onHoldCall={user.id === currentUserId ? holdCall : undefined}
+                  onResumeCall={user.id === currentUserId ? resumeCall : undefined}
+                  onEndCall={user.id === currentUserId ? endCall : undefined}
+                  onTransfer={user.id === currentUserId && !transferMode?.active ? handleInitiateTransfer : undefined}
+                  isTransferTarget={transferMode?.active && user.is_available && !user.current_call_id}
+                  onClick={transferMode?.active && user.is_available && !user.current_call_id ? () => handleTransferToAgent(user.id) : undefined}
+                />
+              )
+            })}
           </div>
         )}
       </div>

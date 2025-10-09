@@ -23,6 +23,39 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
+    const updateUserCallState = async (fields: Record<string, any>) => {
+      const { error } = await adminClient
+        .from('voip_users')
+        .update(fields)
+        .eq('id', agentId)
+
+      if (!error) return
+
+      if (
+        Object.prototype.hasOwnProperty.call(fields, 'current_call_phone_number') &&
+        error.message?.toLowerCase().includes('current_call_phone_number')
+      ) {
+        console.warn(
+          '⚠️ current_call_phone_number column missing; retrying without phone number column'
+        )
+        const fallbackFields = { ...fields }
+        delete fallbackFields.current_call_phone_number
+
+        const { error: fallbackError } = await adminClient
+          .from('voip_users')
+          .update(fallbackFields)
+          .eq('id', agentId)
+
+        if (!fallbackError) {
+          return
+        }
+
+        throw fallbackError
+      }
+
+      throw error
+    }
+
     const twilioClient = twilio(
       process.env.TWILIO_ACCOUNT_SID!,
       process.env.TWILIO_AUTH_TOKEN!
@@ -53,7 +86,7 @@ export async function POST(request: Request) {
       // Get the call record using the PSTN call SID
       const { data: callRecord, error: callFetchError } = await adminClient
         .from('calls')
-        .select('id')
+        .select('id, from_number, answered_at')
         .eq('twilio_call_sid', pstnCallSid)
         .single()
 
@@ -69,19 +102,13 @@ export async function POST(request: Request) {
       const callId = callRecord.id
       console.log('✅ Found call record:', { callId, pstnCallSid })
 
-      // Update voip_users to set current_call_id
-      const { error: updateUserError } = await adminClient
-        .from('voip_users')
-        .update({ current_call_id: callId })
-        .eq('id', agentId)
+      const phoneNumber = callRecord.from_number || null
 
-      if (updateUserError) {
-        console.error('❌ Failed to update user current_call_id:', updateUserError)
-        return NextResponse.json({
-          success: false,
-          error: updateUserError.message
-        }, { status: 500 })
-      }
+      // Update voip_users to set current_call_id
+      await updateUserCallState({
+        current_call_id: callId,
+        current_call_phone_number: phoneNumber,
+      })
 
       console.log('✅ Updated voip_users.current_call_id')
 
@@ -122,15 +149,12 @@ export async function POST(request: Request) {
       }
 
       // Clear current_call_id AND phone number for this agent
-      const { error: updateUserError } = await adminClient
-        .from('voip_users')
-        .update({
+      try {
+        await updateUserCallState({
           current_call_id: null,
-          current_call_phone_number: null  // ← Clear phone number too
+          current_call_phone_number: null
         })
-        .eq('id', agentId)
-
-      if (updateUserError) {
+      } catch (updateUserError: any) {
         console.error('❌ Failed to clear user current_call_id:', updateUserError)
         return NextResponse.json({
           success: false,
