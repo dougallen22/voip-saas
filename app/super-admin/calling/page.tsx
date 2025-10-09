@@ -1196,15 +1196,13 @@ export default function CallingDashboard() {
                   onCall={handleCall}
                   activeCall={
                     user.id === currentUserId
-                      ? activeCall // Current user: use LOCAL Twilio Call object
-                      : (remoteActiveCall
-                          ? { parameters: { From: remoteActiveCall.callerNumber || 'Unknown' } }
-                          : null)
+                      ? activeCall // Current user ONLY: use LOCAL Twilio Call object
+                      : null // Remote users: NO activeCall object (they can't control it)
                   }
                   callStartTime={
                     user.id === currentUserId
                       ? callStartTime
-                      : remoteActiveCall?.answeredAt ?? null
+                      : remoteActiveCall?.answeredAt ?? null // Remote users: timestamp from store
                   }
                   incomingCall={incomingCallMap[user.id]}
                   optimisticTransfer={optimisticTransferMap[user.id]}
