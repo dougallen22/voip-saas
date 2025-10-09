@@ -152,9 +152,17 @@ export default function AgentCard({
       </div>
 
       {/* Status */}
-      <div className="flex items-center gap-2 mb-4">
-        <div className={`w-3 h-3 rounded-full ${getStatusColor()}`}></div>
-        <span className="text-sm font-medium text-slate-700">{getStatusText()}</span>
+      <div className="mb-4">
+        <div className="flex items-center gap-2">
+          <div className={`w-3 h-3 rounded-full ${getStatusColor()}`}></div>
+          <span className="text-sm font-medium text-slate-700">{getStatusText()}</span>
+        </div>
+        {/* Show caller phone number when remote user is on call */}
+        {isOnCall && !activeCall && user.current_call_phone_number && (
+          <div className="mt-1 ml-5 text-sm font-semibold text-green-700">
+            {user.current_call_phone_number}
+          </div>
+        )}
       </div>
 
       {/* Transfer Target Indicator */}
