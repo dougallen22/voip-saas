@@ -85,42 +85,40 @@ export default function CallingDashboard() {
     })
   )
 
-  // Fetch active call details for users with current_call_id
-  const fetchUserActiveCalls = async (users: SaaSUser[]) => {
+  // Fetch ALL calls (ringing, active, parked) - UNIFIED VIEW FOR ALL USERS
+  const fetchAllActiveCalls = async () => {
     try {
-      // Get all users with active calls
-      const usersWithCalls = users.filter(u => u.current_call_id)
-
-      if (usersWithCalls.length === 0) {
-        setUserActiveCalls({})
-        return
-      }
-
-      // Fetch call details from database
-      const callIds = usersWithCalls.map(u => u.current_call_id!)
       const { data: calls, error } = await supabase
         .from('calls')
         .select('*')
-        .in('id', callIds)
+        .in('status', ['ringing', 'active', 'parked'])
+        .order('created_at', { ascending: false })
 
       if (error) {
-        console.error('Error fetching user active calls:', error)
+        console.error('Error fetching all active calls:', error)
         return
       }
 
-      // Map calls to users
+      console.log('🔄 UNIFIED VIEW: Fetched all active calls:', calls)
+
+      // Map calls by assigned_to for displaying in agent cards
       const callMap: Record<string, any> = {}
-      usersWithCalls.forEach(user => {
-        const call = calls?.find(c => c.id === user.current_call_id)
-        if (call) {
-          callMap[user.id] = call
+      calls?.forEach(call => {
+        if (call.assigned_to && call.status === 'active') {
+          callMap[call.assigned_to] = call
         }
       })
 
       setUserActiveCalls(callMap)
-      console.log('📞 Fetched active calls for users:', callMap)
+      console.log('📞 Active calls by agent:', callMap)
+
+      // Set incoming calls (ringing calls not yet assigned)
+      const ringingCalls = calls?.filter(c => c.status === 'ringing') || []
+      setIncomingCalls(ringingCalls)
+      console.log('📞 Incoming (ringing) calls:', ringingCalls)
+
     } catch (error) {
-      console.error('Error in fetchUserActiveCalls:', error)
+      console.error('Error in fetchAllActiveCalls:', error)
     }
   }
 
@@ -141,8 +139,8 @@ export default function CallingDashboard() {
       const fetchedUsers = data.users || []
       setUsers(fetchedUsers)
 
-      // Fetch active call details for users that have current_call_id
-      fetchUserActiveCalls(fetchedUsers)
+      // Fetch ALL active calls from database - UNIFIED VIEW
+      fetchAllActiveCalls()
     } catch (error) {
       console.error('Error fetching users:', error)
 
@@ -160,21 +158,7 @@ export default function CallingDashboard() {
     }
   }
 
-  const fetchCalls = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('calls')
-        .select('*')
-        .eq('status', 'ringing')
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-      setIncomingCalls(data || [])
-      console.log('Fetched incoming calls:', data)
-    } catch (error) {
-      console.error('Error fetching calls:', error)
-    }
-  }
+  // NOTE: fetchCalls removed - now using fetchAllActiveCalls for UNIFIED VIEW
 
   const fetchCurrentUserRole = async () => {
     try {
@@ -199,8 +183,7 @@ export default function CallingDashboard() {
   }
 
   useEffect(() => {
-    fetchUsers()
-    fetchCalls()
+    fetchUsers() // This now calls fetchAllActiveCalls() for unified view
     fetchCurrentUserRole()
 
     // Clean up old parked calls (older than 30 minutes) on page load
@@ -258,37 +241,26 @@ export default function CallingDashboard() {
           table: 'voip_users',
         },
         (payload) => {
-          console.log('User update:', payload)
+          console.log('🔄 UNIFIED: User update detected:', payload)
           fetchUsers()
         }
       )
       .subscribe()
 
-    // Subscribe to incoming calls
+    // Subscribe to calls table changes - UNIFIED VIEW FOR ALL USERS
     const callsChannel = supabase
-      .channel('incoming-calls')
+      .channel('unified-calls-changes')
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'calls',
         },
         (payload) => {
-          console.log('🔔 NEW INCOMING CALL:', payload)
-          fetchCalls()
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'calls',
-        },
-        (payload) => {
-          console.log('📞 Call updated:', payload)
-          fetchCalls()
+          console.log('🔄 UNIFIED: Call state changed:', payload)
+          // Refresh ALL calls for ALL users
+          fetchAllActiveCalls()
         }
       )
       .subscribe()
