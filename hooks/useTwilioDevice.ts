@@ -19,6 +19,7 @@ export function useTwilioDevice() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [callStartTime, setCallStartTime] = useState<Date | null>(null) // Keep for backward compatibility
   const deviceRef = useRef<Device | null>(null)
+  const userIdRef = useRef<string | null>(null) // Store userId in ref for event handlers
 
   useEffect(() => {
     let mounted = true
@@ -32,6 +33,7 @@ export function useTwilioDevice() {
         const data = await response.json()
         console.log('Got Twilio token for identity:', data.identity)
         setCurrentUserId(data.identity)
+        userIdRef.current = data.identity // Store in ref for event handlers
 
         // Create and setup device
         const twilioDevice = new Device(data.token, {
