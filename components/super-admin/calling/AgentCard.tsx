@@ -190,7 +190,7 @@ export default function AgentCard({
       {/* Multi-Agent Incoming Call - Visual Indicator Only (no buttons) */}
       {incomingCall && !activeCall && !onAnswerCall && (() => {
         console.log('🔴 RENDERING IncomingCallCard (NO BUTTONS)', {
-          email,
+          userEmail: user.email,
           callerNumber: incomingCall.callerNumber,
           hasOnAnswerCall: !!onAnswerCall,
           hasOnDeclineCall: !!onDeclineCall
@@ -203,7 +203,7 @@ export default function AgentCard({
       {/* Transfer Call - With Answer/Decline Buttons (blue styling) */}
       {incomingCall && !activeCall && onAnswerCall && onDeclineCall && (() => {
         console.log('🟢 RENDERING TransferCallCard (WITH BUTTONS)', {
-          email,
+          userEmail: user.email,
           callerNumber: incomingCall.callerNumber,
           hasOnAnswerCall: !!onAnswerCall,
           hasOnDeclineCall: !!onDeclineCall
