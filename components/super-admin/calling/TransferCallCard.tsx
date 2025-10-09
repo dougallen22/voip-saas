@@ -7,6 +7,16 @@ interface TransferCallCardProps {
 }
 
 export default function TransferCallCard({ callerNumber, onAnswer, onDecline }: TransferCallCardProps) {
+  const handleAnswer = () => {
+    console.log('🟢 ACCEPT BUTTON CLICKED', { callerNumber })
+    onAnswer()
+  }
+
+  const handleDecline = () => {
+    console.log('🔴 DECLINE BUTTON CLICKED', { callerNumber })
+    onDecline()
+  }
+
   return (
     <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-500 rounded-lg">
       <div className="flex items-center gap-2 mb-3">
@@ -22,7 +32,7 @@ export default function TransferCallCard({ callerNumber, onAnswer, onDecline }: 
       </div>
       <div className="flex gap-2">
         <button
-          onClick={onAnswer}
+          onClick={handleAnswer}
           className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -31,7 +41,7 @@ export default function TransferCallCard({ callerNumber, onAnswer, onDecline }: 
           Answer
         </button>
         <button
-          onClick={onDecline}
+          onClick={handleDecline}
           className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

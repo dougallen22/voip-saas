@@ -551,13 +551,25 @@ export default function CallingDashboard() {
   }, [incomingCall, activeCall, users, pendingTransferTo, processedTransferCallSids])
 
   const handleAnswerCall = async () => {
-    if (!incomingCall || !currentUserId) return
+    console.log('🚀 handleAnswerCall CALLED', {
+      hasIncomingCall: !!incomingCall,
+      hasCurrentUserId: !!currentUserId,
+      currentUserId,
+      callSid: incomingCall?.parameters?.CallSid
+    })
+
+    if (!incomingCall || !currentUserId) {
+      console.log('❌ ABORT: Missing incomingCall or currentUserId')
+      return
+    }
 
     console.log('📞 Attempting to answer call from agent card')
 
     const callSid = incomingCall.parameters.CallSid
 
     try {
+      console.log('🔄 Sending claim-call API request', { callSid, agentId: currentUserId })
+
       // Try to claim the call atomically
       const claimResponse = await fetch('/api/twilio/claim-call', {
         method: 'POST',
@@ -569,6 +581,7 @@ export default function CallingDashboard() {
       })
 
       const claimResult = await claimResponse.json()
+      console.log('📥 claim-call API response', { status: claimResponse.status, result: claimResult })
 
       if (!claimResult.success) {
         console.log('⚠️ Call already claimed by another agent')
@@ -584,7 +597,7 @@ export default function CallingDashboard() {
       setIncomingCallMap({})
 
     } catch (error) {
-      console.error('Error claiming call:', error)
+      console.error('❌ Error claiming call:', error)
       // Could show error toast here
     }
   }
@@ -1061,8 +1074,21 @@ export default function CallingDashboard() {
                 onAnswerCall={
                   // Pass callback if this user has an incoming call (regular or transfer)
                   incomingCallMap[user.id]
-                    ? handleAnswerCall
-                    : undefined
+                    ? (() => {
+                        console.log('🟢 PASS onAnswerCall: User has incoming call', {
+                          userId: user.id,
+                          userEmail: user.email,
+                          incomingCall: incomingCallMap[user.id]
+                        })
+                        return handleAnswerCall
+                      })()
+                    : (() => {
+                        console.log('⚪ SKIP onAnswerCall: No incoming call for user', {
+                          userId: user.id,
+                          userEmail: user.email
+                        })
+                        return undefined
+                      })()
                 }
                 onDeclineCall={
                   // Pass callback if this user has an incoming call (regular or transfer)

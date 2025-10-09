@@ -188,18 +188,34 @@ export default function AgentCard({
       )}
 
       {/* Multi-Agent Incoming Call - Visual Indicator Only (no buttons) */}
-      {incomingCall && !activeCall && !onAnswerCall && (
-        <IncomingCallCard callerNumber={incomingCall.callerNumber} />
-      )}
+      {incomingCall && !activeCall && !onAnswerCall && (() => {
+        console.log('🔴 RENDERING IncomingCallCard (NO BUTTONS)', {
+          email,
+          callerNumber: incomingCall.callerNumber,
+          hasOnAnswerCall: !!onAnswerCall,
+          hasOnDeclineCall: !!onDeclineCall
+        })
+        return (
+          <IncomingCallCard callerNumber={incomingCall.callerNumber} />
+        )
+      })()}
 
       {/* Transfer Call - With Answer/Decline Buttons (blue styling) */}
-      {incomingCall && !activeCall && onAnswerCall && onDeclineCall && (
-        <TransferCallCard
-          callerNumber={incomingCall.callerNumber}
-          onAnswer={onAnswerCall}
-          onDecline={onDeclineCall}
-        />
-      )}
+      {incomingCall && !activeCall && onAnswerCall && onDeclineCall && (() => {
+        console.log('🟢 RENDERING TransferCallCard (WITH BUTTONS)', {
+          email,
+          callerNumber: incomingCall.callerNumber,
+          hasOnAnswerCall: !!onAnswerCall,
+          hasOnDeclineCall: !!onDeclineCall
+        })
+        return (
+          <TransferCallCard
+            callerNumber={incomingCall.callerNumber}
+            onAnswer={onAnswerCall}
+            onDecline={onDeclineCall}
+          />
+        )
+      })()}
 
       {/* Multi-Call Display - NEW */}
       {activeCalls.length > 0 && onHoldCall && onResumeCall && onEndCall && (
