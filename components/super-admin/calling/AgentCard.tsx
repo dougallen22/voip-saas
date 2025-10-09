@@ -219,7 +219,7 @@ export default function AgentCard({
       })()}
 
       {/* UNIFIED ACTIVE CALL DISPLAY - Works for both current user and remote users */}
-      {(isOnCall || activeCall) && (activeCall || callStartTime) && (
+      {(isOnCall || activeCall) && (activeCall || callStartTime) && callStartTime && (
         <div className="mb-4">
           <UnifiedActiveCallCard
             callerId={activeCall?.parameters?.From || 'Unknown'}
