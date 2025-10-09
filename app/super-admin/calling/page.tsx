@@ -922,7 +922,7 @@ export default function CallingDashboard() {
                   <span className="text-sm text-red-600">Error: {twilioError}</span>
                 )}
               </div>
-              <h1 className="text-2xl font-bold text-slate-900 mt-2">SaaS Calling Dashboard</h1>
+              <h1 className="text-2xl font-bold text-slate-900 mt-2">Team Calling Dashboard (Unified View)</h1>
               <p className="text-sm text-slate-600">Manage agents and route calls</p>
             </div>
             {currentUserRole === 'super_admin' && (
