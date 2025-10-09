@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import AgentCard from '@/components/super-admin/calling/AgentCard'
@@ -60,7 +60,7 @@ export default function CallingDashboard() {
   const syncActiveCallFromRow = useCallActiveStore(state => state.syncFromCallRow)
   const [optimisticTransferMap, setOptimisticTransferMap] = useState<Record<string, { callerNumber: string, isLoading: boolean }>>({}) // Show "transferring..." immediately
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null) // Track current user's role
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   // Initialize Twilio Device for browser calling
   const {
@@ -81,6 +81,8 @@ export default function CallingDashboard() {
 
   // Call parking store
   const { parkedCalls, addParkedCall, removeParkedCall, addParkedCallFromDb, getParkedCall } = useCallParkingStore()
+  const parkedCallsRef = useRef(parkedCalls)
+  const incomingCallMapRef = useRef(incomingCallMap)
 
   // Configure dnd-kit sensors for mouse and touch
   const sensors = useSensors(
@@ -91,7 +93,15 @@ export default function CallingDashboard() {
     })
   )
 
-  const fetchRingingCalls = async () => {
+  useEffect(() => {
+    parkedCallsRef.current = parkedCalls
+  }, [parkedCalls])
+
+  useEffect(() => {
+    incomingCallMapRef.current = incomingCallMap
+  }, [incomingCallMap])
+
+  const fetchRingingCalls = useCallback(async () => {
     try {
       const { data: calls, error } = await supabase
         .from('calls')
@@ -109,9 +119,9 @@ export default function CallingDashboard() {
     } catch (error) {
       console.error('Error in fetchRingingCalls:', error)
     }
-  }
+  }, [supabase])
 
-  const fetchUsers = async (retryCount = 0) => {
+  const fetchUsers = useCallback(async (retryCount = 0) => {
     try {
       const response = await fetch('/api/saas-users/list', {
         cache: 'no-store',
@@ -153,9 +163,9 @@ export default function CallingDashboard() {
         setIsLoading(false)
       }
     }
-  }
+  }, [fetchRingingCalls, hydrateActiveCalls])
 
-  const fetchCurrentUserRole = async () => {
+  const fetchCurrentUserRole = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
@@ -175,7 +185,7 @@ export default function CallingDashboard() {
     } catch (error) {
       console.error('Error fetching current user role:', error)
     }
-  }
+  }, [supabase])
 
   useEffect(() => {
     fetchUsers()
@@ -329,7 +339,7 @@ export default function CallingDashboard() {
 
             // Deduplicate: Remove any temp optimistic entries for this call
             // (Only the parker's screen will have a temp entry)
-            const existingTemp = Array.from(parkedCalls.values()).find(
+            const existingTemp = Array.from(parkedCallsRef.current.values()).find(
               call => call.id.startsWith('temp-park-') &&
                       call.callerId === realParkedCall.caller_number
             )
@@ -431,7 +441,17 @@ export default function CallingDashboard() {
       supabase.removeChannel(parkedCallsChannel)
       supabase.removeChannel(activeCallsChannel)
     }
-  }, [])
+  }, [
+    fetchUsers,
+    fetchCurrentUserRole,
+    supabase,
+    addParkedCallFromDb,
+    removeParkedCall,
+    upsertActiveCall,
+    removeActiveCallForUser,
+    fetchRingingCalls,
+    syncActiveCallFromRow
+  ])
 
   // Subscribe to ring events for multi-agent coordination
   useEffect(() => {
@@ -460,7 +480,7 @@ export default function CallingDashboard() {
             console.log(`✅ Set pendingTransferToRef.current = ${currentUserId}`)
 
             // If call already arrived (race condition), update the incoming call map to mark as transfer
-            if (incomingCallMap[currentUserId]) {
+            if (incomingCallMapRef.current?.[currentUserId]) {
               console.log('⚡ Call already arrived - updating to mark as transfer')
               setIncomingCallMap(prev => ({
                 ...prev,
@@ -502,7 +522,7 @@ export default function CallingDashboard() {
     return () => {
       supabase.removeChannel(ringEventsChannel)
     }
-  }, [currentUserId])
+  }, [currentUserId, supabase])
 
   // Watch for incoming calls and map to agent cards
   useEffect(() => {
@@ -595,7 +615,7 @@ export default function CallingDashboard() {
       // This prevents timing issues where cleanup clears the ref before the new call arrives
       console.log('🧹 Cleared incoming call map (call answered/ended)')
     }
-  }, [incomingCall, activeCall, users, pendingTransferTo, processedTransferCallSids])
+  }, [incomingCall, activeCall, users, pendingTransferTo, processedTransferCallSids, currentUserId])
 
   const handleAnswerCall = async () => {
     console.log('🚀 handleAnswerCall CALLED', {

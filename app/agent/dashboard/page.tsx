@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -9,33 +9,32 @@ export default function AgentDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
-    checkUser()
-  }, [])
+    const run = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser()
 
-  const checkUser = async () => {
-    const { data: { user: authUser } } = await supabase.auth.getUser()
+      if (!authUser) {
+        router.push('/login')
+        return
+      }
 
-    if (!authUser) {
-      router.push('/login')
-      return
+      const response = await fetch('/api/saas-users/list')
+      const data = await response.json()
+      const agentData = data.users?.find((u: any) => u.id === authUser.id)
+
+      if (!agentData) {
+        router.push('/dashboard')
+        return
+      }
+
+      setUser(agentData)
+      setIsLoading(false)
     }
 
-    // Get agent details
-    const response = await fetch(`/api/saas-users/list`)
-    const data = await response.json()
-    const agentData = data.users?.find((u: any) => u.id === authUser.id)
-
-    if (!agentData) {
-      router.push('/dashboard')
-      return
-    }
-
-    setUser(agentData)
-    setIsLoading(false)
-  }
+    run()
+  }, [router, supabase])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()

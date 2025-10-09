@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
@@ -19,9 +19,9 @@ export default function AgentManagement() {
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
-  const fetchAgents = async (retryCount = 0) => {
+  const fetchAgents = useCallback(async (retryCount = 0) => {
     try {
       const response = await fetch('/api/saas-users/list', {
         cache: 'no-store',
@@ -49,7 +49,7 @@ export default function AgentManagement() {
         setIsLoading(false)
       }
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchAgents()
@@ -73,7 +73,7 @@ export default function AgentManagement() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [fetchAgents, supabase])
 
   const handleDelete = async (agentId: string, agentName: string) => {
     if (!confirm(`Are you sure you want to delete ${agentName}? This action cannot be undone.`)) {

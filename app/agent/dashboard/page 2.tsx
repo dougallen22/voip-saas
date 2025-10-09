@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import IncomingCallAlert from '@/components/agent/IncomingCallAlert'
@@ -12,56 +12,58 @@ export default function AgentDashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [incomingCall, setIncomingCall] = useState<any>(null)
   const [activeCall, setActiveCall] = useState<any>(null)
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
 
   useEffect(() => {
-    checkUser()
-  }, [])
+    let channel: ReturnType<typeof supabase.channel> | null = null
 
-  const checkUser = async () => {
-    const { data: { user: authUser } } = await supabase.auth.getUser()
+    const run = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser()
 
-    if (!authUser) {
-      router.push('/login')
-      return
+      if (!authUser) {
+        router.push('/login')
+        return
+      }
+
+      const response = await fetch('/api/saas-users/list')
+      const data = await response.json()
+      const agentData = data.users?.find((u: any) => u.id === authUser.id)
+
+      if (!agentData) {
+        router.push('/login')
+        return
+      }
+
+      setUser(agentData)
+      setIsAvailable(agentData.is_available)
+      setIsLoading(false)
+
+      channel = supabase
+        .channel('agent-status')
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'voip_users',
+            filter: `id=eq.${authUser.id}`,
+          },
+          (payload: any) => {
+            setIsAvailable(payload.new.is_available)
+          }
+        )
+        .subscribe()
     }
 
-    // Get agent details
-    const response = await fetch(`/api/saas-users/list`)
-    const data = await response.json()
-    const agentData = data.users?.find((u: any) => u.id === authUser.id)
-
-    if (!agentData) {
-      router.push('/login')
-      return
-    }
-
-    setUser(agentData)
-    setIsAvailable(agentData.is_available)
-    setIsLoading(false)
-
-    // Subscribe to real-time changes
-    const channel = supabase
-      .channel('agent-status')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'voip_users',
-          filter: `id=eq.${authUser.id}`,
-        },
-        (payload: any) => {
-          setIsAvailable(payload.new.is_available)
-        }
-      )
-      .subscribe()
+    run()
 
     return () => {
-      supabase.removeChannel(channel)
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
     }
-  }
+  }, [router, supabase])
 
   const toggleAvailability = async () => {
     if (!user) return
