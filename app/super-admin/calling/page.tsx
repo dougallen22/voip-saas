@@ -24,7 +24,6 @@ interface SaaSUser {
   full_name: string
   is_available: boolean
   current_call_id?: string
-  current_call_phone_number?: string  // NEW: For instant display without fetch!
 }
 
 interface IncomingCall {
@@ -269,10 +268,9 @@ export default function CallingDashboard() {
         },
         (payload) => {
           console.log('🔄 UNIFIED: User update detected:', payload)
-          // Phone number is now IN the user record (current_call_phone_number)
-          // So we only need to fetch users - NO secondary fetch needed!
-          // This is the SAME pattern as parking lot: ALL display data in one record
+          // Fetch users AND call details
           fetchUsers()
+          fetchAllActiveCalls()
         }
       )
       .subscribe()
@@ -1100,8 +1098,8 @@ export default function CallingDashboard() {
                 activeCall={
                   user.id === currentUserId
                     ? activeCall  // Current user: use LOCAL Twilio Call object
-                    : (user.current_call_phone_number  // Other users: use phone number from user record!
-                        ? { parameters: { From: user.current_call_phone_number } }
+                    : (userActiveCalls[user.id]  // Other users: use call details from JOIN query
+                        ? { parameters: { From: userActiveCalls[user.id].from_number } }
                         : null)
                 }
                 callStartTime={
