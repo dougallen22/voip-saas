@@ -48,6 +48,51 @@ export async function POST(request: Request) {
 
     console.log('✅ CLAIM SUCCESS:', { callSid, agentId })
 
+    // Get the call record to get the call ID
+    const { data: callRecord, error: callFetchError } = await adminClient
+      .from('calls')
+      .select('id')
+      .eq('twilio_call_sid', callSid)
+      .single()
+
+    if (callFetchError) {
+      console.error('Warning: Failed to fetch call record:', callFetchError)
+    }
+
+    const callId = callRecord?.id
+
+    // Update the calls table to assign to this agent
+    if (callId) {
+      const { error: updateCallError } = await adminClient
+        .from('calls')
+        .update({
+          assigned_to: agentId,
+          status: 'active'
+        })
+        .eq('id', callId)
+
+      if (updateCallError) {
+        console.error('Warning: Failed to update call assignment:', updateCallError)
+      } else {
+        console.log('✅ Updated calls table - assigned to agent')
+      }
+    }
+
+    // Update voip_users to show agent is on a call
+    // This is what triggers the UI to show the active call in the user card!
+    if (callId) {
+      const { error: updateUserError } = await adminClient
+        .from('voip_users')
+        .update({ current_call_id: callId })
+        .eq('id', agentId)
+
+      if (updateUserError) {
+        console.error('Warning: Failed to update user current_call_id:', updateUserError)
+      } else {
+        console.log('✅ Updated voip_users.current_call_id - UI will show active call in user card!')
+      }
+    }
+
     // Update active_calls to 'active' status for this agent
     const { error: activeCallError } = await adminClient
       .from('active_calls')
@@ -68,6 +113,8 @@ export async function POST(request: Request) {
 
     if (deleteOthersError) {
       console.error('Warning: Failed to delete other active_calls:', deleteOthersError)
+    } else {
+      console.log('✅ Deleted active_calls for other agents - their incoming calls will clear!')
     }
 
     // Broadcast ring cancellation event to other agents
