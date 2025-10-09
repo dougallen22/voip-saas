@@ -48,10 +48,10 @@ export async function POST(request: Request) {
 
     console.log('✅ CLAIM SUCCESS:', { callSid, agentId })
 
-    // Get the call record to get the call ID
+    // Get the call record to get the call ID and phone number
     const { data: callRecord, error: callFetchError } = await adminClient
       .from('calls')
-      .select('id')
+      .select('id, from_number, answered_at')
       .eq('twilio_call_sid', callSid)
       .single()
 
@@ -60,51 +60,47 @@ export async function POST(request: Request) {
     }
 
     const callId = callRecord?.id
+    const callerNumber = callRecord?.from_number
 
-    // Update the calls table to assign to this agent
+    // Update the calls table to assign to this agent and mark as answered
     if (callId) {
       const { error: updateCallError } = await adminClient
         .from('calls')
         .update({
           assigned_to: agentId,
-          status: 'active'
+          status: 'active',
+          answered_at: new Date().toISOString()
         })
         .eq('id', callId)
 
       if (updateCallError) {
         console.error('Warning: Failed to update call assignment:', updateCallError)
       } else {
-        console.log('✅ Updated calls table - assigned to agent')
+        console.log('✅ Updated calls table - assigned to agent and marked as active')
       }
     }
 
-    // Update voip_users to show agent is on a call
-    // This is what triggers the UI to show the active call in the user card!
+    // Update voip_users to show agent is on a call with caller number
+    // This is CRITICAL for real-time sync to all users!
     if (callId) {
       const { error: updateUserError } = await adminClient
         .from('voip_users')
-        .update({ current_call_id: callId })
+        .update({
+          current_call_id: callId,
+          current_call_phone_number: callerNumber,
+          current_call_answered_at: new Date().toISOString()
+        })
         .eq('id', agentId)
 
       if (updateUserError) {
-        console.error('Warning: Failed to update user current_call_id:', updateUserError)
+        console.error('Warning: Failed to update voip_users:', updateUserError)
       } else {
-        console.log('✅ Updated voip_users.current_call_id - UI will show active call in user card!')
+        console.log('✅ Updated voip_users - all users will see active call via realtime!')
       }
     }
 
-    // Update active_calls to 'active' status for this agent
-    const { error: activeCallError } = await adminClient
-      .from('active_calls')
-      .update({ status: 'active' })
-      .eq('call_sid', callSid)
-      .eq('agent_id', agentId)
-
-    if (activeCallError) {
-      console.error('Warning: Failed to update active_calls:', activeCallError)
-    }
-
-    // Delete active_calls entries for other agents (they didn't answer)
+    // CRITICAL FIX: First, delete ALL active_calls for other agents (they didn't answer)
+    // This MUST happen BEFORE updating the answering agent's row to ensure real-time sync
     const { error: deleteOthersError } = await adminClient
       .from('active_calls')
       .delete()
@@ -114,7 +110,20 @@ export async function POST(request: Request) {
     if (deleteOthersError) {
       console.error('Warning: Failed to delete other active_calls:', deleteOthersError)
     } else {
-      console.log('✅ Deleted active_calls for other agents - their incoming calls will clear!')
+      console.log('✅ Deleted active_calls for other agents - their incoming calls will clear via realtime!')
+    }
+
+    // Then update the answering agent's active_calls row to 'active' status
+    const { error: activeCallError } = await adminClient
+      .from('active_calls')
+      .update({ status: 'active' })
+      .eq('call_sid', callSid)
+      .eq('agent_id', agentId)
+
+    if (activeCallError) {
+      console.error('Warning: Failed to update active_calls:', activeCallError)
+    } else {
+      console.log('✅ Updated answering agent active_calls to "active" status')
     }
 
     // Broadcast ring cancellation event to other agents
