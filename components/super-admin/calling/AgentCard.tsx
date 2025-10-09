@@ -6,6 +6,7 @@ import DraggableCallCard from './DraggableCallCard'
 import MultiCallCard from './MultiCallCard'
 import IncomingCallCard from './IncomingCallCard'
 import TransferCallCard from './TransferCallCard'
+import UnifiedActiveCallCard from './UnifiedActiveCallCard'
 
 interface CallState {
   call: any
@@ -217,51 +218,24 @@ export default function AgentCard({
         )
       })()}
 
-      {/* Multi-Call Display - NEW */}
-      {activeCalls.length > 0 && onHoldCall && onResumeCall && onEndCall && (
-        <div className="mb-4 space-y-2">
-          {activeCalls.map((callState) => (
-            <MultiCallCard
-              key={callState.callSid}
-              callSid={callState.callSid}
-              callerNumber={callState.call.parameters.From || 'Unknown'}
-              startTime={callState.startTime}
-              isOnHold={callState.isOnHold}
-              isSelected={callState.callSid === selectedCallId}
-              onHold={() => onHoldCall(callState.callSid)}
-              onResume={() => onResumeCall(callState.callSid)}
-              onEnd={() => onEndCall(callState.callSid)}
-              onTransfer={
-                onTransfer && callState.callSid === selectedCallId
-                  ? () => onTransfer(callState.callSid, callState.call.parameters.From)
-                  : undefined
-              }
-              callObject={callState.call}
-              agentId={user.id}
-              agentName={user.full_name}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Legacy Single Call Display - Keep for backward compatibility */}
-      {activeCalls.length === 0 && (isOnCall || activeCall) && activeCall && callStartTime && (
+      {/* UNIFIED ACTIVE CALL DISPLAY - Works for both current user and remote users */}
+      {(isOnCall || activeCall) && (activeCall || callStartTime) && (
         <div className="mb-4">
-          <DraggableCallCard
-            id={`call-${user.id}`}
-            callObject={activeCall}
-            callerId={activeCall.parameters.From || 'Unknown'}
+          <UnifiedActiveCallCard
+            callerId={activeCall?.parameters?.From || 'Unknown'}
             callerName={undefined}
-            duration={callDuration}
+            answeredAt={callStartTime}
+            isCurrentUser={!!activeCall}
             agentId={user.id}
             agentName={user.full_name}
-            onEndCall={() => activeCall.disconnect()}
+            onEndCall={activeCall ? () => activeCall.disconnect() : undefined}
             onTransfer={
-              onTransfer
+              activeCall && onTransfer
                 ? () => onTransfer(activeCall.parameters.CallSid, activeCall.parameters.From)
                 : undefined
             }
-            isParked={false}
+            callObject={activeCall}
+            enableDrag={!!activeCall}
           />
         </div>
       )}
