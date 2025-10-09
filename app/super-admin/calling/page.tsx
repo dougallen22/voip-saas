@@ -50,6 +50,8 @@ export default function CallingDashboard() {
     callerNumber: string | null
   } | null>(null)
   const [processedTransferCallSids, setProcessedTransferCallSids] = useState<Set<string>>(new Set())
+  // Store active call data for ALL users (not just current user)
+  const [userActiveCalls, setUserActiveCalls] = useState<Record<string, any>>({})
   const [optimisticTransferMap, setOptimisticTransferMap] = useState<Record<string, { callerNumber: string, isLoading: boolean }>>({}) // Show "transferring..." immediately
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null) // Track current user's role
   const supabase = createClient()
@@ -83,6 +85,45 @@ export default function CallingDashboard() {
     })
   )
 
+  // Fetch active call details for users with current_call_id
+  const fetchUserActiveCalls = async (users: SaaSUser[]) => {
+    try {
+      // Get all users with active calls
+      const usersWithCalls = users.filter(u => u.current_call_id)
+
+      if (usersWithCalls.length === 0) {
+        setUserActiveCalls({})
+        return
+      }
+
+      // Fetch call details from database
+      const callIds = usersWithCalls.map(u => u.current_call_id!)
+      const { data: calls, error } = await supabase
+        .from('calls')
+        .select('*')
+        .in('id', callIds)
+
+      if (error) {
+        console.error('Error fetching user active calls:', error)
+        return
+      }
+
+      // Map calls to users
+      const callMap: Record<string, any> = {}
+      usersWithCalls.forEach(user => {
+        const call = calls?.find(c => c.id === user.current_call_id)
+        if (call) {
+          callMap[user.id] = call
+        }
+      })
+
+      setUserActiveCalls(callMap)
+      console.log('📞 Fetched active calls for users:', callMap)
+    } catch (error) {
+      console.error('Error in fetchUserActiveCalls:', error)
+    }
+  }
+
   const fetchUsers = async (retryCount = 0) => {
     try {
       const response = await fetch('/api/saas-users/list', {
@@ -97,7 +138,11 @@ export default function CallingDashboard() {
       }
 
       const data = await response.json()
-      setUsers(data.users || [])
+      const fetchedUsers = data.users || []
+      setUsers(fetchedUsers)
+
+      // Fetch active call details for users that have current_call_id
+      fetchUserActiveCalls(fetchedUsers)
     } catch (error) {
       console.error('Error fetching users:', error)
 
@@ -1037,8 +1082,8 @@ export default function CallingDashboard() {
                 user={user}
                 onToggleAvailability={handleToggleAvailability}
                 onCall={handleCall}
-                activeCall={user.id === currentUserId ? activeCall : null}
-                callStartTime={user.id === currentUserId ? callStartTime : null}
+                activeCall={user.id === currentUserId ? activeCall : (userActiveCalls[user.id] ? { parameters: { From: userActiveCalls[user.id].from_number } } : null)}
+                callStartTime={user.id === currentUserId ? callStartTime : (userActiveCalls[user.id]?.answered_at ? new Date(userActiveCalls[user.id].answered_at) : null)}
                 incomingCall={incomingCallMap[user.id]}
                 optimisticTransfer={optimisticTransferMap[user.id]}
                 onAnswerCall={
