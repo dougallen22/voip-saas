@@ -100,6 +100,27 @@ export async function POST(request: Request) {
 
     console.log('✅ Parked call inserted into database - all screens should show it now')
 
+    // Update active_calls table with 'parked' status
+    // This will trigger instant incoming call clearing on all screens via subscription
+    console.log('📝 Updating active_calls status to parked...')
+    const { error: activeCallError } = await adminClient
+      .from('active_calls')
+      .upsert({
+        call_sid: pstnCallSid,
+        agent_id: userId,
+        caller_number: callerNumber,
+        status: 'parked',
+      }, {
+        onConflict: 'call_sid'
+      })
+
+    if (activeCallError) {
+      console.error('⚠️ Warning: Could not update active_calls:', activeCallError)
+      // Don't throw - this is not critical, parking lot will still work
+    } else {
+      console.log('✅ Active call status updated to parked - incoming calls should clear instantly')
+    }
+
     console.log('Redirecting PSTN call to conference:', conferenceName)
 
     // Redirect the PSTN parent call to TwiML that will put it in a conference

@@ -91,6 +91,18 @@ export async function POST(request: Request) {
       }
     }
 
+    // Also delete from active_calls when parked caller hangs up
+    const { error: deleteActiveError } = await adminClient
+      .from('active_calls')
+      .delete()
+      .eq('call_sid', callSid)
+
+    if (deleteActiveError) {
+      console.error('⚠️ Warning: Failed to delete active_calls:', deleteActiveError)
+    } else {
+      console.log('✅ Deleted active_calls entry')
+    }
+
     return NextResponse.json({
       success: true,
       deleted: parkedCalls.length,

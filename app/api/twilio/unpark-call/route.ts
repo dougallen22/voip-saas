@@ -106,6 +106,16 @@ export async function POST(request: Request) {
       console.log('✅ Parked call deleted from database - all UIs should clear now')
     }
 
+    // Delete active_calls entry since call is no longer parked (will ring to new agent)
+    const { error: deleteActiveError } = await adminClient
+      .from('active_calls')
+      .delete()
+      .eq('call_sid', pstnCallSid)
+
+    if (deleteActiveError) {
+      console.error('Warning: Failed to delete active_calls:', deleteActiveError)
+    }
+
     console.log('Redirecting PSTN call to new agent:', newAgentId)
 
     // Redirect the PSTN call from conference to the new agent

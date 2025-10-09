@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AgentCard from '@/components/super-admin/calling/AgentCard'
 import ParkingLot from '@/components/super-admin/calling/ParkingLot'
@@ -36,6 +37,7 @@ interface IncomingCall {
 }
 
 export default function CallingDashboard() {
+  const router = useRouter()
   const [users, setUsers] = useState<SaaSUser[]>([])
   const [incomingCalls, setIncomingCalls] = useState<IncomingCall[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -43,18 +45,28 @@ export default function CallingDashboard() {
   const [activeDragData, setActiveDragData] = useState<any>(null)
   const [incomingCallMap, setIncomingCallMap] = useState<Record<string, { callSid: string, callerNumber: string, twilioCall: any, isTransfer: boolean }>>({})
   const [pendingTransferTo, setPendingTransferTo] = useState<string | null>(null) // Track which agent is expecting a transfer
-  const pendingTransferToRef = useRef<string | null>(null) // Persist across renders to prevent timing issues
-  const [transferMode, setTransferMode] = useState<{
-    active: boolean
-    callSid: string | null
-    callerNumber: string | null
-  } | null>(null)
-  const [processedTransferCallSids, setProcessedTransferCallSids] = useState<Set<string>>(new Set())
-  const [optimisticTransferMap, setOptimisticTransferMap] = useState<Record<string, { callerNumber: string, isLoading: boolean }>>({}) // Show "transferring..." immediately
-  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null) // Track current user's role
+  const [isAuthChecking, setIsAuthChecking] = useState(true)
   const supabase = createClient()
 
-  // Initialize Twilio Device for browser calling
+  // Check authentication first
+  useEffect(() => {
+    async function checkAuth() {
+      const { data: { user }, error } = await supabase.auth.getUser()
+
+      if (error || !user) {
+        console.log('❌ Not authenticated, redirecting to login')
+        router.push('/login?redirect=/super-admin/calling')
+        return
+      }
+
+      console.log('✅ Authenticated as:', user.id)
+      setIsAuthChecking(false)
+    }
+
+    checkAuth()
+  }, [])
+
+  // Initialize Twilio Device for browser calling (only after auth check)
   const {
     incomingCall,
     activeCall,
@@ -69,7 +81,7 @@ export default function CallingDashboard() {
     holdCall,
     resumeCall,
     endCall
-  } = useTwilioDevice()
+  } = useTwilioDevice(!isAuthChecking) // Only enable after auth check completes
 
   // Call parking store
   const { parkedCalls, addParkedCall, removeParkedCall, addParkedCallFromDb, getParkedCall } = useCallParkingStore()
@@ -131,52 +143,9 @@ export default function CallingDashboard() {
     }
   }
 
-  const fetchCurrentUserRole = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data, error } = await supabase
-        .from('voip_users')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-
-      if (error) {
-        console.error('Error fetching user role:', error)
-        return
-      }
-
-      setCurrentUserRole(data.role)
-    } catch (error) {
-      console.error('Error fetching current user role:', error)
-    }
-  }
-
   useEffect(() => {
     fetchUsers()
     fetchCalls()
-    fetchCurrentUserRole()
-
-    // Clean up old parked calls (older than 30 minutes) on page load
-    const cleanupOldParkedCalls = async () => {
-      try {
-        console.log('🧹 Checking for old parked calls to clean up...')
-        const response = await fetch('/api/admin/cleanup-parked-calls', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'delete_old' })
-        })
-
-        const result = await response.json()
-        if (result.success) {
-          console.log('✅', result.message)
-        }
-      } catch (error) {
-        console.error('Warning: Could not cleanup old parked calls:', error)
-        // Don't fail page load if cleanup fails
-      }
-    }
 
     // Fetch existing parked calls on mount
     const fetchParkedCalls = async () => {
@@ -199,8 +168,7 @@ export default function CallingDashboard() {
       }
     }
 
-    // Run cleanup then fetch
-    cleanupOldParkedCalls().then(() => fetchParkedCalls())
+    fetchParkedCalls()
 
     // Subscribe to voip_users changes
     const usersChannel = supabase
@@ -259,29 +227,9 @@ export default function CallingDashboard() {
           table: 'parked_calls',
         },
         (payload) => {
-          console.log('🚗 NEW PARKED CALL INSERT EVENT:', payload)
+          console.log('🚗 NEW PARKED CALL:', payload)
           if (payload.new) {
-            const realParkedCall = payload.new
-
-            // Deduplicate: Remove any temp optimistic entries for this call
-            // (Only the parker's screen will have a temp entry)
-            const existingTemp = Array.from(parkedCalls.values()).find(
-              call => call.id.startsWith('temp-park-') &&
-                      call.callerId === realParkedCall.caller_number
-            )
-
-            if (existingTemp) {
-              console.log('🔄 Replacing optimistic temp entry:', existingTemp.id, 'with real:', realParkedCall.id)
-              removeParkedCall(existingTemp.id)
-            }
-
-            // Add the real parked call from database
-            addParkedCallFromDb(realParkedCall)
-
-            // Clear incoming call UI when a call is parked
-            // This ensures Doug's screen clears when Rhonda parks a call
-            console.log('🧹 Clearing incoming call UI - call was parked')
-            setIncomingCallMap({})
+            addParkedCallFromDb(payload.new)
           }
         }
       )
@@ -301,56 +249,10 @@ export default function CallingDashboard() {
       )
       .subscribe()
 
-    // Subscribe to active_calls changes for instant incoming call clearing
-    const activeCallsChannel = supabase
-      .channel('active-calls-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'active_calls',
-        },
-        (payload) => {
-          console.log('📍 ACTIVE CALL INSERT:', payload)
-          if (payload.new) {
-            const activeCall = payload.new as any
-
-            // When status is 'parked' OR 'active', clear incoming call instantly
-            if (activeCall.status === 'parked' || activeCall.status === 'active') {
-              console.log('🧹 INSTANT CLEAR: Active call status =', activeCall.status, '- clearing incoming call UI')
-              setIncomingCallMap({})
-            }
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'active_calls',
-        },
-        (payload) => {
-          console.log('📍 ACTIVE CALL UPDATE:', payload)
-          if (payload.new) {
-            const activeCall = payload.new as any
-
-            // When status changes to 'parked' OR 'active', clear incoming call instantly
-            if (activeCall.status === 'parked' || activeCall.status === 'active') {
-              console.log('🧹 INSTANT CLEAR: Active call updated to', activeCall.status, '- clearing incoming call UI')
-              setIncomingCallMap({})
-            }
-          }
-        }
-      )
-      .subscribe()
-
     return () => {
       supabase.removeChannel(usersChannel)
       supabase.removeChannel(callsChannel)
       supabase.removeChannel(parkedCallsChannel)
-      supabase.removeChannel(activeCallsChannel)
     }
   }, [])
 
@@ -373,36 +275,10 @@ export default function CallingDashboard() {
           const event = payload.new as any
           console.log('📢 Ring event received:', event)
 
-          // If incoming transfer is targeting this agent
-          if (event.event_type === 'transfer_start' && event.agent_id === currentUserId) {
-            console.log('🎯 Transfer incoming - preparing to receive call in my card only')
-            pendingTransferToRef.current = currentUserId
-            setPendingTransferTo(currentUserId)
-            console.log(`✅ Set pendingTransferToRef.current = ${currentUserId}`)
-
-            // If call already arrived (race condition), update the incoming call map to mark as transfer
-            if (incomingCallMap[currentUserId]) {
-              console.log('⚡ Call already arrived - updating to mark as transfer')
-              setIncomingCallMap(prev => ({
-                ...prev,
-                [currentUserId]: {
-                  ...prev[currentUserId],
-                  isTransfer: true
-                }
-              }))
-            }
-          }
-
           // If someone else answered, cancel our incoming ring
           if (event.event_type === 'answered' && event.agent_id !== currentUserId) {
             console.log('🚫 Another agent answered, canceling our ring')
             setIncomingCallMap({}) // Clear incoming call UI
-          }
-
-          // If ANY agent answered (including myself), clear optimistic transfer UI
-          if (event.event_type === 'answered') {
-            console.log('✅ Call answered - clearing optimistic transfer UI')
-            setOptimisticTransferMap({}) // Clear "transferring..." UI
           }
 
           // If this agent declined
@@ -428,49 +304,30 @@ export default function CallingDashboard() {
   // Watch for incoming calls and map to agent cards
   useEffect(() => {
     if (incomingCall && !activeCall) {
-      const callSid = incomingCall.parameters.CallSid
-
       console.log('🔍 INCOMING CALL HANDLER:', {
         hasIncomingCall: !!incomingCall,
         hasActiveCall: !!activeCall,
         pendingTransferTo,
-        pendingTransferToRef: pendingTransferToRef.current,
-        currentUserId,
-        callSid: callSid,
-        from: incomingCall?.parameters?.From,
-        alreadyProcessed: processedTransferCallSids.has(callSid)
+        callSid: incomingCall?.parameters?.CallSid
       })
 
-      // Check if this is a transfer (use REF to prevent timing issues with state)
-      if (pendingTransferToRef.current && !processedTransferCallSids.has(callSid)) {
-        const targetAgentId = pendingTransferToRef.current
-        console.log(`📞 Transfer/Unpark call detected - showing ONLY to agent: ${targetAgentId}`)
-        console.log(`📞 Current user: ${currentUserId}`)
-        console.log(`📞 Will show centralized bar: ${targetAgentId === currentUserId}`)
-
-        // Mark this call SID as processed to prevent duplicate processing
-        setProcessedTransferCallSids(prev => new Set(prev).add(callSid))
-        console.log(`🔒 Marked call ${callSid} as processed transfer`)
+      // Check if this is a transfer (pending transfer to specific agent)
+      if (pendingTransferTo) {
+        console.log(`📞 Transfer call detected - showing only to agent: ${pendingTransferTo}`)
 
         // Only show to the specific agent being transferred to
         const newMap: Record<string, any> = {
-          [targetAgentId]: {
-            callSid: callSid,
+          [pendingTransferTo]: {
+            callSid: incomingCall.parameters.CallSid,
             callerNumber: incomingCall.parameters.From || 'Unknown',
             twilioCall: incomingCall,
-            isTransfer: true // This is a transfer call (includes unpark)
+            isTransfer: true // This is a transfer call
           }
         }
 
         setIncomingCallMap(newMap)
-        setOptimisticTransferMap({}) // Clear optimistic UI - real call has arrived
-        console.log(`🔄 Transfer call mapped. Map contents:`, newMap)
-        console.log(`🔄 Is current user the transfer target? ${currentUserId === targetAgentId}`)
-
-        // Clear the ref now that we've processed it
-        pendingTransferToRef.current = null
-        setPendingTransferTo(null)
-        console.log(`✅ Cleared pendingTransferTo after mapping transfer call`)
+        setPendingTransferTo(null) // Clear the pending transfer state
+        console.log(`🔄 Transfer call mapped to agent, cleared pending transfer`)
 
         // Timeout for transfer calls
         const timeoutId = setTimeout(() => {
@@ -479,7 +336,7 @@ export default function CallingDashboard() {
         }, 45000)
 
         return () => clearTimeout(timeoutId)
-      } else if (!processedTransferCallSids.has(callSid)) {
+      } else {
         // Multi-agent ring - show to ALL available agents
         console.log('📞 Incoming call detected - mapping to ALL available agents')
 
@@ -506,17 +363,12 @@ export default function CallingDashboard() {
         }, 45000)
 
         return () => clearTimeout(timeoutId)
-      } else {
-        console.log(`⏭️ Skipping duplicate incoming call event for ${callSid}`)
       }
     } else if (!incomingCall || activeCall) {
       // Clear incoming call map when call is answered or ended
       setIncomingCallMap({})
-      // DON'T clear pendingTransferToRef here - it should only be cleared after processing the transfer
-      // This prevents timing issues where cleanup clears the ref before the new call arrives
-      console.log('🧹 Cleared incoming call map (call answered/ended)')
     }
-  }, [incomingCall, activeCall, users, pendingTransferTo, processedTransferCallSids])
+  }, [incomingCall, activeCall, users, pendingTransferTo])
 
   const handleAnswerCall = async () => {
     if (!incomingCall || !currentUserId) return
@@ -617,67 +469,6 @@ export default function CallingDashboard() {
     }
   }
 
-  const handleInitiateTransfer = (callSid: string, callerNumber: string) => {
-    console.log('🔄 Initiating transfer mode for call:', callSid)
-    setTransferMode({
-      active: true,
-      callSid,
-      callerNumber
-    })
-    alert('Transfer mode active - click an available agent to transfer this call')
-  }
-
-  const handleCancelTransfer = () => {
-    console.log('❌ Canceling transfer mode')
-    setTransferMode(null)
-  }
-
-  const handleTransferToAgent = async (targetAgentId: string) => {
-    if (!transferMode || !transferMode.callSid) return
-
-    console.log('🔄 Transferring call to agent:', targetAgentId)
-
-    try {
-      // Set pending transfer state BEFORE calling API (both state and ref)
-      setPendingTransferTo(targetAgentId)
-      pendingTransferToRef.current = targetAgentId
-
-      // Call transfer API
-      const response = await fetch('/api/twilio/transfer-call', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          callSid: transferMode.callSid,
-          targetAgentId: targetAgentId,
-          callerNumber: transferMode.callerNumber,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        setPendingTransferTo(null)
-        pendingTransferToRef.current = null
-        throw new Error(data.error || 'Failed to transfer call')
-      }
-
-      console.log('✅ Transfer initiated - waiting for target agent to answer')
-
-      // Clear transfer mode
-      setTransferMode(null)
-
-      // The pendingTransferTo state will cause incoming call to show ONLY to target agent
-      // This happens in existing useEffect (lines 284-350)
-
-    } catch (error: any) {
-      console.error('❌ Transfer failed:', error)
-      alert(`Failed to transfer call: ${error.message}`)
-      setPendingTransferTo(null)
-      pendingTransferToRef.current = null
-      setTransferMode(null)
-    }
-  }
-
   const handleDragStart = (event: DragStartEvent) => {
     console.log('🎯 Drag started:', event.active.id)
     setActiveDragId(event.active.id as string)
@@ -717,15 +508,10 @@ export default function CallingDashboard() {
 
         console.log('About to park call:', { callSid, callerNumber })
 
-        // Clear any lingering incoming call UI from when this call first rang
-        setIncomingCallMap({})
-        console.log('🧹 Cleared incoming call map (parking call)')
-
-        // Optimistically add to parking lot (parker's screen only - for immediate feedback)
-        const tempId = `temp-park-${Date.now()}`
-        const optimisticParkedCall = {
-          id: tempId,
-          callObject: null,
+        // Optimistically add to parking lot
+        const parkedCall = {
+          id: `parked-${Date.now()}`,
+          callObject: null, // No longer have active call object
           callerId: callerNumber || 'Unknown',
           callerName: undefined,
           parkedAt: new Date(),
@@ -737,13 +523,16 @@ export default function CallingDashboard() {
           originalAgentId: currentUserId || undefined,
         }
 
-        addParkedCall(optimisticParkedCall)
-        console.log('⚡ Optimistically added to parking lot (temp ID:', tempId, ')')
+        addParkedCall(parkedCall)
 
-        // Call park API - this will:
-        // 1. Insert into database (all browsers will see INSERT event via Supabase realtime)
-        // 2. Redirect the PSTN parent call to conference/hold music
-        console.log('Calling park API...')
+        // Clear any lingering incoming call UI from when this call first rang
+        setIncomingCallMap({})
+        console.log('🧹 Cleared incoming call map (parking call)')
+
+        // Call park API FIRST - this will redirect the PSTN parent call to conference
+        // IMPORTANT: Do NOT disconnect browser client before this!
+        // When the PSTN call is redirected, the browser leg will naturally disconnect
+        console.log('Redirecting PSTN call to hold music...')
         const response = await fetch('/api/twilio/park-call', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -751,21 +540,30 @@ export default function CallingDashboard() {
             callSid: callSid,
             userId: currentUserId,
             callerNumber: callerNumber,
-            callId: null,
-            tempId: tempId, // Pass temp ID so we can dedupe later
+            callId: null, // We don't have the call ID from the Call object
           }),
         })
 
         const data = await response.json()
 
         if (!response.ok) {
-          // Rollback optimistic add
-          removeParkedCall(tempId)
+          // Rollback on error
+          removeParkedCall(parkedCall.id)
           throw new Error(data.error || 'Failed to park call')
         }
 
+        // Update with real IDs from server
+        const realParkedCall = {
+          ...parkedCall,
+          id: data.parkedCallId,
+          conferenceSid: data.conferenceName, // Store conference name for now
+          participantSid: data.pstnCallSid,
+        }
+
+        removeParkedCall(parkedCall.id)
+        addParkedCall(realParkedCall)
+
         console.log('✅ Call parked successfully - caller will hear hold music')
-        console.log('Real parked call ID from server:', data.parkedCallId)
 
         // The browser client will disconnect automatically when the PSTN call is redirected
         // We don't need to manually disconnect it
@@ -799,24 +597,9 @@ export default function CallingDashboard() {
       }
 
       try {
-        // Get caller number from parked call
-        const parkedCall = getParkedCall(parkedCallId)
-        const callerNumber = parkedCall?.callerId || 'Unknown'
-
-        // IMMEDIATELY show optimistic "transferring..." UI in target agent card
-        setOptimisticTransferMap({
-          [newAgentId]: {
-            callerNumber: callerNumber,
-            isLoading: true
-          }
-        })
-        console.log(`⚡ Showing optimistic transfer UI for agent: ${newAgentId}`)
-
-        // Set pending transfer state BEFORE calling unpark API (both state and ref)
+        // Set pending transfer state BEFORE calling unpark API
         setPendingTransferTo(newAgentId)
-        pendingTransferToRef.current = newAgentId
         console.log(`🔄 Set pending transfer to agent: ${newAgentId}`)
-        console.log(`🔄 Set pendingTransferToRef.current: ${newAgentId}`)
 
         // Optimistically remove from parking lot
         removeParkedCall(parkedCallId)
@@ -840,18 +623,14 @@ export default function CallingDashboard() {
             addParkedCall(parkedCall)
           }
           setPendingTransferTo(null)
-          pendingTransferToRef.current = null
-          setOptimisticTransferMap({}) // Clear optimistic UI
           throw new Error(data.error || 'Failed to unpark call')
         }
 
         console.log('✅ Call unparked successfully - waiting for Twilio to connect')
         // Don't call fetchUsers() - real-time subscriptions will update automatically
         // Don't clear pendingTransferTo here - wait for incoming call event
-        // Optimistic UI will be cleared when real incoming call arrives
       } catch (error: any) {
         console.error('❌ Error unparking call:', error)
-        setOptimisticTransferMap({}) // Clear optimistic UI on error
         alert(`Failed to retrieve call: ${error.message}`)
       }
     }
@@ -859,6 +638,17 @@ export default function CallingDashboard() {
 
   const availableCount = users.filter(u => u.is_available).length
   const onCallCount = users.filter(u => u.current_call_id).length
+
+  // Show loading while checking auth
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-lg text-slate-600">Checking authentication...</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <DndContext
@@ -893,14 +683,12 @@ export default function CallingDashboard() {
               <h1 className="text-2xl font-bold text-slate-900 mt-2">SaaS Calling Dashboard</h1>
               <p className="text-sm text-slate-600">Manage agents and route calls</p>
             </div>
-            {currentUserRole === 'super_admin' && (
-              <Link
-                href="/super-admin/agents"
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium"
-              >
-                Manage Agents
-              </Link>
-            )}
+            <Link
+              href="/super-admin/agents"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium"
+            >
+              Manage Agents
+            </Link>
           </div>
         </div>
       </header>
@@ -928,7 +716,7 @@ export default function CallingDashboard() {
           </div>
         </div>
 
-        {/* Multi-Agent Incoming Call Bar - ONLY for multi-agent ring (not transfers) */}
+        {/* Centralized Incoming Call Answer/Decline Section */}
         {incomingCall && !activeCall && currentUserId && incomingCallMap[currentUserId] && !incomingCallMap[currentUserId].isTransfer && (
           <div className="mb-6 p-6 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-orange-400 rounded-lg shadow-lg">
             <div className="flex items-center justify-between">
@@ -967,36 +755,6 @@ export default function CallingDashboard() {
           </div>
         )}
 
-        {/* Transfer Mode Banner */}
-        {transferMode?.active && (
-          <div className="mb-6 p-4 bg-purple-100 border-2 border-purple-500 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center animate-pulse">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-purple-900">Transfer Mode Active</p>
-                  <p className="text-lg font-bold text-purple-800">
-                    Transferring: {transferMode.callerNumber}
-                  </p>
-                  <p className="text-xs text-purple-700 mt-1">
-                    Click an available agent to complete transfer
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={handleCancelTransfer}
-                className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors"
-              >
-                Cancel Transfer
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Agent Grid */}
         {isLoading ? (
           <div className="text-center py-12">
@@ -1005,14 +763,12 @@ export default function CallingDashboard() {
         ) : users.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg">
             <div className="text-slate-600 mb-4">No agents yet</div>
-            {currentUserRole === 'super_admin' && (
-              <Link
-                href="/super-admin/agents"
-                className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-medium"
-              >
-                Add Your First Agent
-              </Link>
-            )}
+            <Link
+              href="/super-admin/agents"
+              className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-medium"
+            >
+              Add Your First Agent
+            </Link>
           </div>
         ) : (
           <div className="grid md:grid-cols-3 gap-6">
@@ -1025,7 +781,6 @@ export default function CallingDashboard() {
                 activeCall={user.id === currentUserId ? activeCall : null}
                 callStartTime={user.id === currentUserId ? callStartTime : null}
                 incomingCall={incomingCallMap[user.id]}
-                optimisticTransfer={optimisticTransferMap[user.id]}
                 onAnswerCall={
                   // Only pass callbacks for transfer calls (targeted to this specific user)
                   incomingCallMap[user.id]?.isTransfer
@@ -1043,9 +798,6 @@ export default function CallingDashboard() {
                 onHoldCall={user.id === currentUserId ? holdCall : undefined}
                 onResumeCall={user.id === currentUserId ? resumeCall : undefined}
                 onEndCall={user.id === currentUserId ? endCall : undefined}
-                onTransfer={user.id === currentUserId && !transferMode?.active ? handleInitiateTransfer : undefined}
-                isTransferTarget={transferMode?.active && user.is_available && !user.current_call_id}
-                onClick={transferMode?.active && user.is_available && !user.current_call_id ? () => handleTransferToAgent(user.id) : undefined}
               />
             ))}
           </div>

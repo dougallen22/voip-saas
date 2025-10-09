@@ -48,6 +48,28 @@ export async function POST(request: Request) {
 
     console.log('✅ CLAIM SUCCESS:', { callSid, agentId })
 
+    // Update active_calls to 'active' status for this agent
+    const { error: activeCallError } = await adminClient
+      .from('active_calls')
+      .update({ status: 'active' })
+      .eq('call_sid', callSid)
+      .eq('agent_id', agentId)
+
+    if (activeCallError) {
+      console.error('Warning: Failed to update active_calls:', activeCallError)
+    }
+
+    // Delete active_calls entries for other agents (they didn't answer)
+    const { error: deleteOthersError } = await adminClient
+      .from('active_calls')
+      .delete()
+      .eq('call_sid', callSid)
+      .neq('agent_id', agentId)
+
+    if (deleteOthersError) {
+      console.error('Warning: Failed to delete other active_calls:', deleteOthersError)
+    }
+
     // Broadcast ring cancellation event to other agents
     const { error: ringError } = await adminClient
       .from('ring_events')

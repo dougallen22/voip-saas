@@ -98,6 +98,23 @@ export async function POST(request: Request) {
       console.error('Call record error:', callError)
     }
 
+    // Insert into active_calls table for instant state tracking
+    // Status is 'ringing' - will be updated to 'active', 'parked', or 'transferring'
+    for (const agent of availableAgents) {
+      const { error: activeCallError } = await adminClient
+        .from('active_calls')
+        .insert({
+          call_sid: callSid,
+          agent_id: agent.id,
+          caller_number: from,
+          status: 'ringing'
+        })
+
+      if (activeCallError) {
+        console.error(`Warning: Failed to create active_call for agent ${agent.id}:`, activeCallError)
+      }
+    }
+
     // Broadcast ring_start event to all available agents
     for (const agent of availableAgents) {
       const { error: ringError } = await adminClient
