@@ -130,11 +130,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // Greet the caller
-    twiml.say({
-      voice: 'alice',
-    }, 'Thank you for calling. Connecting you to an agent now.')
-
     // Dial ALL available agents simultaneously
     const dial = twiml.dial({
       timeout: 30,
