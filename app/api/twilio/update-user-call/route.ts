@@ -159,6 +159,22 @@ export async function POST(request: Request) {
 
       console.log('✅ Database updated - ALL users will see active call instantly!', { agentId, callId })
 
+      // Broadcast ring cancellation event to other agents for coordination
+      const { error: ringError } = await adminClient
+        .from('ring_events')
+        .insert({
+          call_sid: pstnCallSid,
+          agent_id: agentId,
+          event_type: 'answered'
+        })
+
+      if (ringError) {
+        console.error('Warning: Failed to broadcast ring event:', ringError)
+        // Don't fail - event is just for UI coordination
+      } else {
+        console.log('✅ Broadcast ring event - other agents will clear incoming call UI')
+      }
+
       return NextResponse.json({
         success: true,
         callId
