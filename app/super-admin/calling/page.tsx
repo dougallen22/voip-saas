@@ -237,18 +237,49 @@ export default function CallingDashboard() {
         },
         (payload) => {
           console.log('🔄 UNIFIED: User update detected:', payload)
-          if (payload.new) {
-            const newRow = payload.new as any
+          const eventType = (payload as any).eventType as string | undefined
+          const newRow = payload.new as any | null
+          const oldRow = payload.old as any | null
+
+          if (newRow) {
             if (newRow.current_call_id) {
               upsertActiveCall(newRow)
             } else {
               removeActiveCallForUser(newRow.id)
             }
-          } else if (payload.old) {
-            removeActiveCallForUser((payload.old as any).id)
-          }
 
-          fetchUsers()
+            setUsers(prev => {
+              const index = prev.findIndex(user => user.id === newRow.id)
+              if (index === -1) {
+                return prev
+              }
+
+              const existing = prev[index]
+              const updatedUser: SaaSUser = {
+                ...existing,
+                is_available: newRow.is_available ?? existing.is_available,
+                current_call_id:
+                  newRow.current_call_id !== undefined
+                    ? newRow.current_call_id
+                    : existing.current_call_id ?? null,
+                current_call_phone_number:
+                  newRow.current_call_phone_number !== undefined
+                    ? newRow.current_call_phone_number
+                    : existing.current_call_phone_number ?? null,
+              }
+
+              const next = [...prev]
+              next[index] = updatedUser
+              return next
+            })
+
+            if (eventType === 'INSERT') {
+              fetchUsers()
+            }
+          } else if (oldRow) {
+            removeActiveCallForUser(oldRow.id)
+            setUsers(prev => prev.filter(user => user.id !== oldRow.id))
+          }
         }
       )
       .subscribe()
