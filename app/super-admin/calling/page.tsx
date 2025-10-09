@@ -86,36 +86,62 @@ export default function CallingDashboard() {
   )
 
   // Fetch ALL calls (ringing, active, parked) - UNIFIED VIEW FOR ALL USERS
+  // CRITICAL: Use current_call_id as source of truth (like parking lot uses parked_calls table)
   const fetchAllActiveCalls = async () => {
     try {
-      const { data: calls, error } = await supabase
-        .from('calls')
-        .select('*')
-        .in('status', ['ringing', 'active', 'parked'])
-        .order('created_at', { ascending: false })
+      // Fetch users with active calls by joining voip_users → calls via current_call_id
+      // This is the SAME pattern as parking lot: dedicated field points to call record
+      const { data: usersWithCalls, error: usersError } = await supabase
+        .from('voip_users')
+        .select(`
+          id,
+          email,
+          current_call_id,
+          calls:current_call_id (
+            id,
+            twilio_call_sid,
+            from_number,
+            to_number,
+            status,
+            answered_at,
+            assigned_to
+          )
+        `)
+        .not('current_call_id', 'is', null)
 
-      if (error) {
-        console.error('Error fetching all active calls:', error)
+      if (usersError) {
+        console.error('Error fetching users with calls:', usersError)
         return
       }
 
-      console.log('🔄 UNIFIED VIEW: Fetched all active calls:', calls)
+      console.log('🔄 UNIFIED VIEW: Fetched users with active calls:', usersWithCalls)
 
-      // Map calls by assigned_to for displaying in agent cards
+      // Map calls by user ID (source of truth: current_call_id)
       const callMap: Record<string, any> = {}
-      calls?.forEach(call => {
-        if (call.assigned_to && call.status === 'active') {
-          callMap[call.assigned_to] = call
+      usersWithCalls?.forEach((user: any) => {
+        if (user.calls) {
+          callMap[user.id] = user.calls
+          console.log(`✅ User ${user.email} has active call from ${user.calls.from_number}`)
         }
       })
 
       setUserActiveCalls(callMap)
-      console.log('📞 Active calls by agent:', callMap)
+      console.log('📞 Active calls by user (via current_call_id):', callMap)
 
-      // Set incoming calls (ringing calls not yet assigned)
-      const ringingCalls = calls?.filter(c => c.status === 'ringing') || []
-      setIncomingCalls(ringingCalls)
-      console.log('📞 Incoming (ringing) calls:', ringingCalls)
+      // Separately fetch ringing calls (not yet assigned)
+      const { data: calls, error: callsError } = await supabase
+        .from('calls')
+        .select('*')
+        .eq('status', 'ringing')
+        .order('created_at', { ascending: false })
+
+      if (callsError) {
+        console.error('Error fetching ringing calls:', callsError)
+      } else {
+        const ringingCalls = calls || []
+        setIncomingCalls(ringingCalls)
+        console.log('📞 Incoming (ringing) calls:', ringingCalls)
+      }
 
     } catch (error) {
       console.error('Error in fetchAllActiveCalls:', error)
@@ -242,7 +268,10 @@ export default function CallingDashboard() {
         },
         (payload) => {
           console.log('🔄 UNIFIED: User update detected:', payload)
+          // Fetch both users AND active calls
+          // This ensures when current_call_id changes, we immediately fetch call details
           fetchUsers()
+          fetchAllActiveCalls()
         }
       )
       .subscribe()
