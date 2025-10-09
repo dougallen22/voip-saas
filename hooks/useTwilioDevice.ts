@@ -69,8 +69,30 @@ export function useTwilioDevice() {
             call.on('accept', async () => {
               console.log('✅ Call accepted by Twilio:', callSid)
               if (mounted) {
-                // NOTE: claim-call API is called BEFORE acceptCall() in handleAnswerCall
-                // So we don't need to call it again here - that would cause a 409 Conflict
+                // Update database to show this user is on a call
+                // This ensures ALL users see the active call in this agent's card
+                if (userIdRef.current) {
+                  try {
+                    console.log('📥 Updating database - setting current_call_id for agent')
+                    const response = await fetch('/api/twilio/update-user-call', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        callSid: callSid,
+                        agentId: userIdRef.current,
+                        action: 'start'
+                      })
+                    })
+                    const result = await response.json()
+                    if (result.success) {
+                      console.log('✅ Database updated - current_call_id set, ALL users will see active call!')
+                    } else {
+                      console.error('❌ Failed to update database:', result.error)
+                    }
+                  } catch (error) {
+                    console.error('❌ Error updating database:', error)
+                  }
+                }
 
                 const newCallState: CallState = {
                   call,
@@ -96,9 +118,34 @@ export function useTwilioDevice() {
               }
             })
 
-            call.on('disconnect', () => {
+            call.on('disconnect', async () => {
               console.log('Call disconnected:', callSid)
               if (mounted) {
+                // Update database to clear current_call_id
+                // This ensures ALL users see the call ended in this agent's card
+                if (userIdRef.current) {
+                  try {
+                    console.log('📥 Updating database - clearing current_call_id for agent')
+                    const response = await fetch('/api/twilio/update-user-call', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        callSid: callSid,
+                        agentId: userIdRef.current,
+                        action: 'end'
+                      })
+                    })
+                    const result = await response.json()
+                    if (result.success) {
+                      console.log('✅ Database updated - current_call_id cleared, ALL users will see call ended!')
+                    } else {
+                      console.error('❌ Failed to update database:', result.error)
+                    }
+                  } catch (error) {
+                    console.error('❌ Error updating database:', error)
+                  }
+                }
+
                 // Remove from activeCalls array
                 setActiveCalls(prev => {
                   const filtered = prev.filter(c => c.callSid !== callSid)
