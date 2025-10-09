@@ -104,10 +104,41 @@ export async function POST(request: Request) {
 
       const phoneNumber = callRecord.from_number || null
 
+      // CRITICAL: Delete ALL active_calls rows for this call (all agents)
+      // This is what makes parking work instantly - we do the SAME thing here!
+      console.log('🧹 Deleting ALL active_calls for call SID:', pstnCallSid)
+      const { error: deleteActiveCallsError } = await adminClient
+        .from('active_calls')
+        .delete()
+        .eq('call_sid', pstnCallSid)
+
+      if (deleteActiveCallsError) {
+        console.error('❌ Failed to delete active_calls:', deleteActiveCallsError)
+      } else {
+        console.log('✅ Deleted all active_calls - other agents\' incoming calls will clear instantly!')
+      }
+
+      // Insert new active_calls row for this agent with status='active'
+      const { error: insertActiveCallError } = await adminClient
+        .from('active_calls')
+        .insert({
+          call_sid: pstnCallSid,
+          agent_id: agentId,
+          caller_number: phoneNumber || 'Unknown',
+          status: 'active'
+        })
+
+      if (insertActiveCallError) {
+        console.error('❌ Failed to insert active_call:', insertActiveCallError)
+      } else {
+        console.log('✅ Inserted active_call with status=active')
+      }
+
       // Update voip_users to set current_call_id
       await updateUserCallState({
         current_call_id: callId,
         current_call_phone_number: phoneNumber,
+        current_call_answered_at: new Date().toISOString()
       })
 
       console.log('✅ Updated voip_users.current_call_id')
@@ -126,7 +157,7 @@ export async function POST(request: Request) {
         console.error('❌ Failed to update call status:', updateCallError)
       }
 
-      console.log('✅ Database updated - current_call_id set for agent', { agentId, callId })
+      console.log('✅ Database updated - ALL users will see active call instantly!', { agentId, callId })
 
       return NextResponse.json({
         success: true,
@@ -148,11 +179,25 @@ export async function POST(request: Request) {
         console.log('⚠️ Could not fetch call details, using original SID:', fetchError.message)
       }
 
+      // Delete ALL active_calls for this call (cleanup)
+      console.log('🧹 Deleting ALL active_calls for ended call:', pstnCallSid)
+      const { error: deleteActiveCallsError } = await adminClient
+        .from('active_calls')
+        .delete()
+        .eq('call_sid', pstnCallSid)
+
+      if (deleteActiveCallsError) {
+        console.error('❌ Failed to delete active_calls:', deleteActiveCallsError)
+      } else {
+        console.log('✅ Deleted all active_calls for ended call')
+      }
+
       // Clear current_call_id AND phone number for this agent
       try {
         await updateUserCallState({
           current_call_id: null,
-          current_call_phone_number: null
+          current_call_phone_number: null,
+          current_call_answered_at: null
         })
       } catch (updateUserError: any) {
         console.error('❌ Failed to clear user current_call_id:', updateUserError)
