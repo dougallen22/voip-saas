@@ -269,7 +269,13 @@ export default function CallingDashboard() {
             } else {
               removeActiveCallForUser(newRow.id)
 
-              // Clear incoming call UI if this user was showing an incoming call
+              // ============================================================================
+              // REALTIME SYNC FIX: Clear incoming call UI when current_call_id becomes null
+              // ============================================================================
+              // When a call ends, current_call_id is set to null in the backend
+              // This triggers a realtime UPDATE event with current_call_id = null
+              // We need to clear the incoming call UI to prevent ghost incoming calls
+              // See: app/api/twilio/update-user-call/route.ts lines 217-228
               setIncomingCallMap(prev => {
                 const updated = { ...prev }
                 delete updated[newRow.id]
@@ -555,7 +561,13 @@ export default function CallingDashboard() {
             setIncomingCallMap({}) // Clear incoming call UI
           }
 
-          // If caller hung up before anyone answered
+          // ============================================================================
+          // REALTIME SYNC FIX: Handle ring_cancel to clear ghost incoming calls
+          // ============================================================================
+          // When a call ends, the backend broadcasts ring_cancel event
+          // This clears incoming call UI on all agents' screens
+          // Prevents ghost incoming calls after one agent hangs up
+          // See: app/api/twilio/update-user-call/route.ts lines 252-270
           if (event.event_type === 'ring_cancel') {
             console.log('🚫 Caller hung up - clearing all incoming call UIs')
             setIncomingCallMap({}) // Clear incoming call UI for all agents

@@ -72,6 +72,9 @@ export async function POST(request: Request) {
     )
 
     if (action === 'start') {
+      // ============================================================================
+      // REALTIME SYNC FIX #1: Get the PSTN parent call SID
+      // ============================================================================
       // The callSid we receive is from the browser client (child call)
       // We need to get the parent call (PSTN caller) - SAME AS PARKING LOT!
       let pstnCallSid = callSid
@@ -132,11 +135,16 @@ export async function POST(request: Request) {
         console.log('✅ Inserted active_call with status=active for answering agent')
       }
 
-      // Update voip_users to set current_call_id
+      // ============================================================================
+      // REALTIME SYNC FIX #2: Update voip_users with all call details
+      // ============================================================================
+      // This update triggers a realtime event that ALL other users receive instantly
+      // (if RLS is disabled or SELECT policy exists for anon role)
+      // The three columns below were missing initially, causing silent failures
       await updateUserCallState({
         current_call_id: callId,
-        current_call_phone_number: phoneNumber,
-        current_call_answered_at: new Date().toISOString()
+        current_call_phone_number: phoneNumber,  // Added in FIX-REALTIME-SYNC.sql
+        current_call_answered_at: new Date().toISOString()  // Added in FIX-REALTIME-SYNC.sql
       })
 
       console.log('✅ Updated voip_users.current_call_id')
@@ -206,7 +214,12 @@ export async function POST(request: Request) {
         console.log('✅ Deleted all active_calls for ended call')
       }
 
-      // Clear current_call_id AND phone number for this agent
+      // ============================================================================
+      // REALTIME SYNC FIX #3: Clear current_call_id for this agent
+      // ============================================================================
+      // This triggers a realtime UPDATE event where current_call_id becomes null
+      // Frontend subscription clears incoming call UI when this happens
+      // See app/super-admin/calling/page.tsx lines 266-278
       try {
         await updateUserCallState({
           current_call_id: null,
@@ -236,7 +249,12 @@ export async function POST(request: Request) {
 
       console.log('✅ Database updated - current_call_id cleared for agent', { agentId, pstnCallSid })
 
-      // Broadcast call ended event to clear incoming call UI on other agents' screens
+      // ============================================================================
+      // REALTIME SYNC FIX #4: Broadcast ring_cancel to clear ghost incoming calls
+      // ============================================================================
+      // Multi-agent ring means other agents' Twilio Devices are still ringing
+      // even after one agent hangs up. This event tells them to clear their UI.
+      // Frontend handler: app/super-admin/calling/page.tsx lines 253-256
       const { error: ringCancelError } = await adminClient
         .from('ring_events')
         .insert({

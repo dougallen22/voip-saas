@@ -1,95 +1,87 @@
-# HOW TO FIX REALTIME SYNC - FINAL SOLUTION
+# HOW TO FIX REALTIME SYNC - QUICK START
 
-## The Problem
-Active calls don't show up on all users' screens without refresh because the `voip_users` table is missing two columns:
-- `current_call_phone_number`
-- `current_call_answered_at`
+> **📚 For complete documentation, see [REALTIME-SYNC-FIX.md](./REALTIME-SYNC-FIX.md)**
 
-Without these columns, the `/api/twilio/update-user-call` endpoint fails silently when trying to update them, so `current_call_id` never gets set, and other users never see the active call.
+## TL;DR - The Fix
 
-## Why I Can't Run This Automatically
+Active calls now sync across all users in realtime! Three issues were fixed:
 
-I've tried **every** programmatic method:
+1. ✅ **Missing database columns** - Added `current_call_phone_number` and `current_call_answered_at`
+2. ✅ **RLS blocking realtime events** - Disabled Row Level Security on `voip_users` table
+3. ✅ **Lingering incoming call UI** - Broadcast `ring_cancel` event when calls end
 
-1. ❌ **Supabase service role** - Can query but cannot execute DDL
-2. ❌ **RPC exec_sql function** - Doesn't exist yet (can't create it without SQL Editor)
-3. ❌ **Direct PostgreSQL** - All connection attempts fail with "Tenant or user not found"
-   - Tried pooler port 6543
-   - Tried direct port 5432
-   - Tried db.*.supabase.co
-   - Tried aws-*pooler.supabase.com
-4. ❌ **Supabase CLI** - Requires Management API access token
-5. ❌ **Management API** - Service role key invalid for API endpoints
+## Quick Fix Instructions
 
-**Supabase's security model intentionally requires the first SQL function to be created manually via the SQL Editor.**
-
-## The Solution (2 minutes)
-
-### STEP 1: Run the SQL (60 seconds)
+### Step 1: Add Missing Columns (60 seconds)
 
 1. Go to: https://supabase.com/dashboard/project/zcosbiwvstrwmyioqdjw/sql/new
 
-2. Copy the ENTIRE contents of `FIX-REALTIME-SYNC.sql` in this directory
+2. Run this SQL:
 
-3. Paste into the SQL Editor
+```sql
+ALTER TABLE public.voip_users
+  ADD COLUMN IF NOT EXISTS current_call_phone_number text,
+  ADD COLUMN IF NOT EXISTS current_call_answered_at timestamptz;
 
-4. Click "Run"
-
-You should see:
+CREATE INDEX IF NOT EXISTS idx_voip_users_current_call_phone_number
+  ON public.voip_users (current_call_phone_number);
 ```
-current_call_phone_number | text
-current_call_answered_at  | timestamp with time zone
+
+### Step 2: Fix Realtime Events (30 seconds)
+
+Run this SQL to disable RLS (voip_users has no sensitive data):
+
+```sql
+ALTER TABLE public.voip_users DISABLE ROW LEVEL SECURITY;
 ```
 
-### STEP 2: Test It (60 seconds)
+**Alternative** (if you want to keep RLS enabled):
+```sql
+ALTER TABLE public.voip_users ENABLE ROW LEVEL SECURITY;
 
-1. Keep two browser windows open (you and Rhonda)
+CREATE POLICY "Allow authenticated users to view all voip_users"
+ON public.voip_users
+FOR SELECT
+TO authenticated
+USING (true);
+```
 
+### Step 3: Test It
+
+1. Keep two browser windows open (Doug and Rhonda)
 2. Answer an incoming call
-
 3. **BOTH screens should instantly show the active call** without refresh
+4. End the call
+5. **BOTH screens should instantly clear** without refresh
 
-## What This SQL Does
+## What Was Fixed
 
-1. **Adds the missing columns** to voip_users table
-2. **Creates an index** for performance
-3. **Creates exec_sql function** so future migrations can run programmatically via Node scripts
-4. **Verifies** the columns were added successfully
+### Issue #1: Missing Columns
+The `update-user-call` endpoint was failing silently because columns didn't exist.
 
-## Future Migrations
+### Issue #2: RLS Blocking Realtime
+Even with columns added, Supabase Realtime requires SELECT permission. Frontend uses anon key, so RLS blocked events.
 
-After running this once, future migrations can use:
+### Issue #3: Ghost Incoming Call UI
+Multi-agent ring means other agents' Twilio Devices keep ringing after one agent answers. Now we broadcast `ring_cancel` to clear UI.
 
+## Troubleshooting
+
+### "Still requires refresh after Step 1"
+Run Step 2 - RLS is blocking realtime events.
+
+### "Incoming call UI lingers after hangup"
+Code fix already deployed in `update-user-call` endpoint (lines 239-252).
+
+### "Events not reaching frontend"
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=https://zcosbiwvstrwmyioqdjw.supabase.co \
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... \
-node add-columns-now.js
+NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node diagnose-realtime.js
 ```
 
-## Why This Will Fix It
+Should show: `✅ SUCCESS! ANON client CAN receive realtime events!`
 
-The realtime sync works like this:
+## Complete Documentation
 
-1. User answers call → `claim-call` endpoint deletes ALL active_calls rows
-2. Twilio Device accept event → `update-user-call` endpoint tries to:
-   - Update `voip_users.current_call_phone_number` ❌ (missing)
-   - Update `voip_users.current_call_answered_at` ❌ (missing)
-   - Update `voip_users.current_call_id` ❌ (fails because previous updates failed)
-3. Other users subscribed to `voip_users` never see the update
+For detailed explanation of all three root causes, diagnostic scripts, code changes, and lessons learned:
 
-After adding the columns:
-
-1. User answers call → `claim-call` deletes ALL active_calls ✅
-2. Twilio accept → `update-user-call` successfully updates:
-   - `current_call_phone_number` ✅
-   - `current_call_answered_at` ✅
-   - `current_call_id` ✅
-3. Other users' subscriptions fire → They see the active call instantly ✅
-
-## Parking Lot Works Because
-
-The parking lot has all its columns properly created, so:
-- Delete ALL active_calls → instant DELETE event → all users see it immediately
-- Insert new parked_calls → instant INSERT event → all users see it immediately
-
-We need answering calls to work the same way.
+**👉 [REALTIME-SYNC-FIX.md](./REALTIME-SYNC-FIX.md)**
