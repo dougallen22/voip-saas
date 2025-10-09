@@ -236,6 +236,21 @@ export async function POST(request: Request) {
 
       console.log('✅ Database updated - current_call_id cleared for agent', { agentId, pstnCallSid })
 
+      // Broadcast call ended event to clear incoming call UI on other agents' screens
+      const { error: ringCancelError } = await adminClient
+        .from('ring_events')
+        .insert({
+          call_sid: pstnCallSid,
+          agent_id: agentId,
+          event_type: 'ring_cancel'
+        })
+
+      if (ringCancelError) {
+        console.error('Warning: Failed to broadcast ring cancel event:', ringCancelError)
+      } else {
+        console.log('✅ Broadcast ring_cancel event - all agents will clear incoming call UI')
+      }
+
       return NextResponse.json({
         success: true
       })
