@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { callSid, userId, callerNumber, callId } = body
+    const { callSid, userId, callerNumber, callId, userName } = body
 
     if (!callSid || !userId || !callerNumber) {
       return NextResponse.json(
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       )
     }
 
-    console.log('🚗 PARKING CALL:', { callSid, userId, callerNumber, callId })
+    console.log('🚗 PARKING CALL:', { callSid, userId, userName, callerNumber, callId })
 
     const adminClient = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -88,6 +88,7 @@ export async function POST(request: Request) {
           conference_name: conferenceName,
           hold_music_url: holdMusicUrl,
           pstn_call_sid: pstnCallSid,
+          parked_by_name: userName || 'Unknown', // Store the user's name for display
         },
       })
       .select()

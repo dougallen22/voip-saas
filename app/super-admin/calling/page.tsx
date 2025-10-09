@@ -919,6 +919,7 @@ export default function CallingDashboard() {
           body: JSON.stringify({
             callSid: callSid,
             userId: currentUserId,
+            userName: users.find(u => u.id === currentUserId)?.full_name,
             callerNumber: callerNumber,
             callId: null,
             tempId: tempId, // Pass temp ID so we can dedupe later
