@@ -1059,14 +1059,14 @@ export default function CallingDashboard() {
                 incomingCall={incomingCallMap[user.id]}
                 optimisticTransfer={optimisticTransferMap[user.id]}
                 onAnswerCall={
-                  // Only pass callbacks for transfer calls (targeted to this specific user)
-                  incomingCallMap[user.id]?.isTransfer
+                  // Pass callback if this user has an incoming call (regular or transfer)
+                  incomingCallMap[user.id]
                     ? handleAnswerCall
                     : undefined
                 }
                 onDeclineCall={
-                  // Only pass callbacks for transfer calls (targeted to this specific user)
-                  incomingCallMap[user.id]?.isTransfer
+                  // Pass callback if this user has an incoming call (regular or transfer)
+                  incomingCallMap[user.id]
                     ? handleDeclineCall
                     : undefined
                 }
