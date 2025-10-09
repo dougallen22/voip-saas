@@ -40,6 +40,7 @@ export async function GET() {
         full_name: authUser?.user_metadata?.full_name || 'N/A',
         role: voipUser.role,
         is_available: voipUser.is_available,
+        current_call_id: voipUser.current_call_id, // CRITICAL: Include this for displaying active calls!
         created_at: voipUser.created_at,
       }
     })
