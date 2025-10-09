@@ -64,9 +64,33 @@ export function useTwilioDevice() {
             setIncomingCall(call)
 
             // Set up call event listeners
-            call.on('accept', () => {
+            call.on('accept', async () => {
               console.log('Call accepted:', callSid)
               if (mounted) {
+                // CRITICAL: Claim the call in the database when accepted
+                // This updates voip_users.current_call_id which triggers all dashboards to sync
+                try {
+                  console.log('📞 Claiming call in database:', { callSid, agentId: userIdRef.current })
+                  const claimResponse = await fetch('/api/twilio/claim-call', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      callSid: callSid,
+                      agentId: userIdRef.current
+                    })
+                  })
+
+                  const claimResult = await claimResponse.json()
+
+                  if (claimResult.success) {
+                    console.log('✅ Call claimed in database - all dashboards will now sync!')
+                  } else {
+                    console.warn('⚠️ Failed to claim call in database:', claimResult.error)
+                  }
+                } catch (error) {
+                  console.error('❌ Error claiming call in database:', error)
+                }
+
                 const newCallState: CallState = {
                   call,
                   callSid,
