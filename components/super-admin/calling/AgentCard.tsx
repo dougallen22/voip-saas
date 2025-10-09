@@ -22,6 +22,7 @@ interface AgentCardProps {
     full_name: string
     is_available: boolean
     current_call_id?: string
+    current_call_phone_number?: string | null
   }
   onToggleAvailability: (userId: string, newStatus: boolean) => void
   onCall: (userId: string) => void
