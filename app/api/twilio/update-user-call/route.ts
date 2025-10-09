@@ -69,10 +69,25 @@ export async function POST(request: Request) {
       const callId = callRecord.id
       console.log('✅ Found call record:', { callId, pstnCallSid })
 
-      // Update voip_users to set current_call_id
+      // Get full call details to extract phone number
+      const { data: fullCallRecord } = await adminClient
+        .from('calls')
+        .select('*')
+        .eq('id', callId)
+        .single()
+
+      const phoneNumber = fullCallRecord?.from_number || 'Unknown'
+      console.log('📞 Phone number for display:', phoneNumber)
+
+      // Update voip_users to set current_call_id AND phone number
+      // CRITICAL: This ensures Realtime UPDATE event includes phone number!
+      // Same pattern as parking lot: store ALL display data in the table
       const { error: updateUserError } = await adminClient
         .from('voip_users')
-        .update({ current_call_id: callId })
+        .update({
+          current_call_id: callId,
+          current_call_phone_number: phoneNumber  // ← NEW! Enables instant display
+        })
         .eq('id', agentId)
 
       if (updateUserError) {
@@ -82,6 +97,8 @@ export async function POST(request: Request) {
           error: updateUserError.message
         }, { status: 500 })
       }
+
+      console.log('✅ Updated voip_users with call_id AND phone_number for instant display!')
 
       // Also update calls table status to 'active' and assigned_to
       const { error: updateCallError } = await adminClient
@@ -119,10 +136,13 @@ export async function POST(request: Request) {
         console.log('⚠️ Could not fetch call details, using original SID:', fetchError.message)
       }
 
-      // Clear current_call_id for this agent
+      // Clear current_call_id AND phone number for this agent
       const { error: updateUserError } = await adminClient
         .from('voip_users')
-        .update({ current_call_id: null })
+        .update({
+          current_call_id: null,
+          current_call_phone_number: null  // ← Clear phone number too
+        })
         .eq('id', agentId)
 
       if (updateUserError) {

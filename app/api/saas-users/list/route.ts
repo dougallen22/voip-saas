@@ -41,6 +41,7 @@ export async function GET() {
         role: voipUser.role,
         is_available: voipUser.is_available,
         current_call_id: voipUser.current_call_id, // CRITICAL: Include this for displaying active calls!
+        current_call_phone_number: voipUser.current_call_phone_number, // NEW: Phone number for instant display!
         created_at: voipUser.created_at,
       }
     })

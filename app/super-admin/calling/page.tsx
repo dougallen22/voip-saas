@@ -24,6 +24,7 @@ interface SaaSUser {
   full_name: string
   is_available: boolean
   current_call_id?: string
+  current_call_phone_number?: string  // NEW: For instant display without fetch!
 }
 
 interface IncomingCall {
@@ -268,10 +269,10 @@ export default function CallingDashboard() {
         },
         (payload) => {
           console.log('🔄 UNIFIED: User update detected:', payload)
-          // Fetch both users AND active calls
-          // This ensures when current_call_id changes, we immediately fetch call details
+          // Phone number is now IN the user record (current_call_phone_number)
+          // So we only need to fetch users - NO secondary fetch needed!
+          // This is the SAME pattern as parking lot: ALL display data in one record
           fetchUsers()
-          fetchAllActiveCalls()
         }
       )
       .subscribe()
@@ -1096,8 +1097,20 @@ export default function CallingDashboard() {
                 user={user}
                 onToggleAvailability={handleToggleAvailability}
                 onCall={handleCall}
-                activeCall={user.id === currentUserId ? activeCall : (userActiveCalls[user.id] ? { parameters: { From: userActiveCalls[user.id].from_number } } : null)}
-                callStartTime={user.id === currentUserId ? callStartTime : (userActiveCalls[user.id]?.answered_at ? new Date(userActiveCalls[user.id].answered_at) : null)}
+                activeCall={
+                  user.id === currentUserId
+                    ? activeCall  // Current user: use LOCAL Twilio Call object
+                    : (user.current_call_phone_number  // Other users: use phone number from user record!
+                        ? { parameters: { From: user.current_call_phone_number } }
+                        : null)
+                }
+                callStartTime={
+                  user.id === currentUserId
+                    ? callStartTime
+                    : (userActiveCalls[user.id]?.answered_at
+                        ? new Date(userActiveCalls[user.id].answered_at)
+                        : null)
+                }
                 incomingCall={incomingCallMap[user.id]}
                 optimisticTransfer={optimisticTransferMap[user.id]}
                 onAnswerCall={
