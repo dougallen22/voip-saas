@@ -687,42 +687,55 @@ export default function CallingDashboard() {
       return
     }
 
-    console.log('📞 Attempting to answer call from agent card')
-
-    const callSid = incomingCall.parameters.CallSid
+    console.log('📞 Attempting to answer call')
 
     try {
-      console.log('🔄 Sending claim-call API request', { callSid, agentId: currentUserId })
+      // CRITICAL FIX: Accept call FIRST to establish audio
+      // This gives us access to the Call object with parentCallSid
+      console.log('🎧 Accepting call to establish audio connection')
+      const call = await acceptCall()
 
-      // Try to claim the call atomically
-      const claimResponse = await fetch('/api/twilio/claim-call', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          callSid: callSid,
-          agentId: currentUserId
-        })
-      })
+      console.log('📞 Call accepted, audio connected')
 
-      const claimResult = await claimResponse.json()
-      console.log('📥 claim-call API response', { status: claimResponse.status, result: claimResult })
+      // Now check if we need to claim (in case another agent also answered)
+      // Use a small delay to let Twilio events propagate
+      setTimeout(async () => {
+        try {
+          const callSid = incomingCall.parameters.CallSid
 
-      if (!claimResult.success) {
-        console.log('⚠️ Call already claimed by another agent')
-        setIncomingCallMap({}) // Clear UI
-        // Could show a toast notification here
-        return
-      }
+          console.log('🔄 Sending claim-call API request', { callSid, agentId: currentUserId })
 
-      console.log('✅ Successfully claimed call, now accepting')
+          const claimResponse = await fetch('/api/twilio/claim-call', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              callSid: callSid,
+              agentId: currentUserId
+            })
+          })
 
-      // We won the race - accept the call
-      await acceptCall()
+          const claimResult = await claimResponse.json()
+          console.log('📥 claim-call API response', { status: claimResponse.status, result: claimResult })
+
+          if (!claimResult.success) {
+            console.log('⚠️ Another agent claimed - they will keep the call')
+            // Another agent claimed it, so disconnect our call
+            if (call) {
+              call.disconnect()
+            }
+          } else {
+            console.log('✅ Successfully claimed call')
+          }
+        } catch (error) {
+          console.error('❌ Error in post-answer claim:', error)
+        }
+      }, 100)
+
       setIncomingCallMap({})
 
     } catch (error) {
-      console.error('❌ Error claiming call:', error)
-      // Could show error toast here
+      console.error('❌ Error answering call:', error)
+      setIncomingCallMap({})
     }
   }
 
