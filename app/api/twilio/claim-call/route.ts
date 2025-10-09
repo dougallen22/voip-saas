@@ -47,12 +47,37 @@ export async function POST(request: Request) {
     }
 
     console.log('✅ CLAIM SUCCESS:', { callSid, agentId })
-    console.log('💡 Database updates will be handled by update-user-call endpoint when Twilio accept event fires')
 
-    // NOTE: We do NOT update the database here anymore!
-    // The Twilio SDK's accept() event will trigger update-user-call endpoint
-    // which handles ALL database updates in one place using the parking lot pattern.
-    // This prevents race conditions and ensures real-time sync works correctly.
+    // CRITICAL: Delete ALL active_calls rows for this call IMMEDIATELY
+    // This clears other agents' incoming call UI via real-time DELETE events
+    // Must happen BEFORE acceptCall() is called in the frontend
+    console.log('🧹 IMMEDIATELY deleting ALL active_calls for call:', callSid)
+    const { error: deleteError } = await adminClient
+      .from('active_calls')
+      .delete()
+      .eq('call_sid', callSid)
+
+    if (deleteError) {
+      console.error('❌ CRITICAL: Failed to delete active_calls:', deleteError)
+    } else {
+      console.log('✅ DELETED all active_calls - other agents\' screens will clear NOW')
+    }
+
+    // Broadcast answered event for ring coordination
+    const { error: ringError } = await adminClient
+      .from('ring_events')
+      .insert({
+        call_sid: callSid,
+        agent_id: agentId,
+        event_type: 'answered'
+      })
+
+    if (ringError) {
+      console.error('Warning: Failed to broadcast ring event:', ringError)
+    }
+
+    // NOTE: The answering agent's active_calls row and voip_users update
+    // will be handled by update-user-call when Twilio accept event fires
 
     return NextResponse.json({
       success: true,

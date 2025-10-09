@@ -107,21 +107,9 @@ export async function POST(request: Request) {
 
       const phoneNumber = callRecord.from_number || null
 
-      // CRITICAL: Delete ALL active_calls rows for this call (all agents)
-      // This is what makes parking work instantly - we do the SAME thing here!
-      console.log('🧹 Deleting ALL active_calls for call SID:', pstnCallSid)
-      const { error: deleteActiveCallsError } = await adminClient
-        .from('active_calls')
-        .delete()
-        .eq('call_sid', pstnCallSid)
-
-      if (deleteActiveCallsError) {
-        console.error('❌ Failed to delete active_calls:', deleteActiveCallsError)
-      } else {
-        console.log('✅ Deleted all active_calls - other agents\' incoming calls will clear instantly!')
-      }
-
-      // Insert new active_calls row for this agent with status='active'
+      // Insert active_calls row for THIS agent with status='active'
+      // (Other agents' rows were already deleted by claim-call endpoint)
+      console.log('➕ Inserting active_calls for answering agent:', agentId)
       const { error: insertActiveCallError } = await adminClient
         .from('active_calls')
         .insert({
@@ -134,7 +122,7 @@ export async function POST(request: Request) {
       if (insertActiveCallError) {
         console.error('❌ Failed to insert active_call:', insertActiveCallError)
       } else {
-        console.log('✅ Inserted active_call with status=active')
+        console.log('✅ Inserted active_call with status=active for answering agent')
       }
 
       // Update voip_users to set current_call_id
