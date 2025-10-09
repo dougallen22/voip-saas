@@ -127,6 +127,23 @@ export default function AgentCard({
       .slice(0, 2)
   }
 
+  const formatPhoneNumber = (phone: string) => {
+    // Remove all non-digit characters
+    const digits = phone.replace(/\D/g, '')
+
+    // Handle US numbers (10 or 11 digits)
+    if (digits.length === 11 && digits[0] === '1') {
+      // Remove leading 1
+      const number = digits.slice(1)
+      return `${number.slice(0, 3)}-${number.slice(3, 6)}-${number.slice(6)}`
+    } else if (digits.length === 10) {
+      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
+    }
+
+    // Return original if not a standard format
+    return phone.replace('+', '')
+  }
+
   const isOnCall = !!user.current_call_id
 
   return (
@@ -160,8 +177,8 @@ export default function AgentCard({
         </div>
         {/* Show caller phone number when remote user is on call */}
         {isOnCall && !activeCall && user.current_call_phone_number && (
-          <div className="mt-1 ml-5 text-sm font-semibold text-green-700">
-            {user.current_call_phone_number}
+          <div className="mt-1 ml-5 text-lg font-bold text-green-700">
+            {formatPhoneNumber(user.current_call_phone_number)}
           </div>
         )}
       </div>

@@ -78,6 +78,23 @@ export default function UnifiedActiveCallCard({
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
+  const formatPhoneNumber = (phone: string) => {
+    // Remove all non-digit characters
+    const digits = phone.replace(/\D/g, '')
+
+    // Handle US numbers (10 or 11 digits)
+    if (digits.length === 11 && digits[0] === '1') {
+      // Remove leading 1
+      const number = digits.slice(1)
+      return `${number.slice(0, 3)}-${number.slice(3, 6)}-${number.slice(6)}`
+    } else if (digits.length === 10) {
+      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
+    }
+
+    // Return original if not a standard format
+    return phone.replace('+', '')
+  }
+
   return (
     <div
       ref={enableDrag && isCurrentUser ? setNodeRef : undefined}
@@ -111,10 +128,10 @@ export default function UnifiedActiveCallCard({
             <span className="text-2xl">📞</span>
             <div>
               <div className="text-white font-bold text-lg">
-                {callerName || callerId}
+                {callerName || formatPhoneNumber(callerId)}
               </div>
               {callerName && (
-                <div className="text-green-100 text-sm">{callerId}</div>
+                <div className="text-green-100 text-sm">{formatPhoneNumber(callerId)}</div>
               )}
             </div>
           </div>
