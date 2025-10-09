@@ -27,12 +27,19 @@ export async function POST(request: Request) {
     )
 
     const updateUserCallState = async (fields: Record<string, any>) => {
-      const { error } = await adminClient
+      console.log('🔄 Updating voip_users:', { agentId, fields })
+      const { data, error } = await adminClient
         .from('voip_users')
         .update(fields)
         .eq('id', agentId)
+        .select()
 
-      if (!error) return
+      if (!error) {
+        console.log('✅ voip_users updated successfully:', data)
+        return
+      }
+
+      console.error('❌ voip_users update failed:', error)
 
       if (
         Object.prototype.hasOwnProperty.call(fields, 'current_call_phone_number') &&

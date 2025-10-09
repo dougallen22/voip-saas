@@ -23,8 +23,8 @@ async function debugActiveCalls() {
   console.log('\n=== VOIP USERS ===')
   const { data: users, error: userError } = await supabase
     .from('voip_users')
-    .select('id, full_name, email, current_call_id, current_call_phone_number, is_available')
-    .order('full_name')
+    .select('*')
+    .limit(5)
 
   if (userError) {
     console.error('Error:', userError)
