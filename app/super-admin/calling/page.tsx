@@ -693,7 +693,7 @@ export default function CallingDashboard() {
       // CRITICAL FIX: Accept call FIRST to establish audio
       // This gives us access to the Call object with parentCallSid
       console.log('🎧 Accepting call to establish audio connection')
-      const call = await acceptCall()
+      await acceptCall()
 
       console.log('📞 Call accepted, audio connected')
 
@@ -720,8 +720,8 @@ export default function CallingDashboard() {
           if (!claimResult.success) {
             console.log('⚠️ Another agent claimed - they will keep the call')
             // Another agent claimed it, so disconnect our call
-            if (call) {
-              call.disconnect()
+            if (activeCall) {
+              activeCall.disconnect()
             }
           } else {
             console.log('✅ Successfully claimed call')
