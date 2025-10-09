@@ -19,6 +19,16 @@ import {
   DragOverlay,
 } from '@dnd-kit/core'
 
+const ACTIVE_CALL_TERMINAL_STATUSES = new Set([
+  'completed',
+  'completed_no_answer',
+  'ended',
+  'failed',
+  'busy',
+  'canceled',
+  'parked',
+])
+
 interface SaaSUser {
   id: string
   email: string
@@ -58,6 +68,8 @@ export default function CallingDashboard() {
   const upsertActiveCall = useCallActiveStore(state => state.upsertFromVoipUser)
   const removeActiveCallForUser = useCallActiveStore(state => state.removeForUser)
   const syncActiveCallFromRow = useCallActiveStore(state => state.syncFromCallRow)
+  const upsertActiveCallFromActiveRow = useCallActiveStore(state => state.upsertFromActiveCallRow)
+  const removeActiveCallByCallSid = useCallActiveStore(state => state.removeByCallSid)
   const [optimisticTransferMap, setOptimisticTransferMap] = useState<Record<string, { callerNumber: string, isLoading: boolean }>>({}) // Show "transferring..." immediately
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null) // Track current user's role
   const supabase = useMemo(() => createClient(), [])
@@ -314,6 +326,7 @@ export default function CallingDashboard() {
               assigned_to: callRow.assigned_to,
               from_number: callRow.from_number,
               answered_at: callRow.answered_at,
+              twilio_call_sid: callRow.twilio_call_sid,
             })
           }
 
@@ -387,14 +400,22 @@ export default function CallingDashboard() {
         },
         (payload) => {
           console.log('📍 ACTIVE CALL INSERT:', payload)
-          if (payload.new) {
-            const activeCall = payload.new as any
+          const activeCall = payload.new as any
 
-            // When status is 'parked' OR 'active', clear incoming call instantly
-            if (activeCall.status === 'parked' || activeCall.status === 'active') {
-              console.log('🧹 INSTANT CLEAR: Active call status =', activeCall.status, '- clearing incoming call UI')
-              setIncomingCallMap({})
+          if (!activeCall) return
+
+          if (activeCall.status === 'active') {
+            upsertActiveCallFromActiveRow(activeCall)
+          } else if (ACTIVE_CALL_TERMINAL_STATUSES.has(activeCall.status)) {
+            if (activeCall.agent_id) {
+              removeActiveCallForUser(activeCall.agent_id)
             }
+            removeActiveCallByCallSid(activeCall.call_sid)
+          }
+
+          if (activeCall.status === 'parked' || activeCall.status === 'active') {
+            console.log('🧹 INSTANT CLEAR: Active call status =', activeCall.status, '- clearing incoming call UI')
+            setIncomingCallMap({})
           }
         }
       )
@@ -407,14 +428,22 @@ export default function CallingDashboard() {
         },
         (payload) => {
           console.log('📍 ACTIVE CALL UPDATE:', payload)
-          if (payload.new) {
-            const activeCall = payload.new as any
+          const activeCall = payload.new as any
 
-            // When status changes to 'parked' OR 'active', clear incoming call instantly
-            if (activeCall.status === 'parked' || activeCall.status === 'active') {
-              console.log('🧹 INSTANT CLEAR: Active call updated to', activeCall.status, '- clearing incoming call UI')
-              setIncomingCallMap({})
+          if (!activeCall) return
+
+          if (activeCall.status === 'active') {
+            upsertActiveCallFromActiveRow(activeCall)
+          } else if (ACTIVE_CALL_TERMINAL_STATUSES.has(activeCall.status)) {
+            if (activeCall.agent_id) {
+              removeActiveCallForUser(activeCall.agent_id)
             }
+            removeActiveCallByCallSid(activeCall.call_sid)
+          }
+
+          if (activeCall.status === 'parked' || activeCall.status === 'active') {
+            console.log('🧹 INSTANT CLEAR: Active call updated to', activeCall.status, '- clearing incoming call UI')
+            setIncomingCallMap({})
           }
         }
       )
@@ -427,8 +456,15 @@ export default function CallingDashboard() {
         },
         (payload) => {
           console.log('📍 ACTIVE CALL DELETE:', payload)
-          // When another agent answers, their active_calls row gets updated to 'active'
-          // and OUR row gets DELETED. This should clear our incoming call UI.
+          const oldCall = payload.old as any
+
+          if (oldCall?.agent_id) {
+            removeActiveCallForUser(oldCall.agent_id)
+          }
+          if (oldCall?.call_sid) {
+            removeActiveCallByCallSid(oldCall.call_sid)
+          }
+
           console.log('🧹 INSTANT CLEAR: Active call deleted (another agent answered) - clearing incoming call UI')
           setIncomingCallMap({})
         }
@@ -449,6 +485,8 @@ export default function CallingDashboard() {
     removeParkedCall,
     upsertActiveCall,
     removeActiveCallForUser,
+    upsertActiveCallFromActiveRow,
+    removeActiveCallByCallSid,
     fetchRingingCalls,
     syncActiveCallFromRow
   ])

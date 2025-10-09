@@ -3,6 +3,7 @@ import { devtools } from 'zustand/middleware'
 
 interface ActiveCall {
   callId: string
+  callSid?: string
   callerNumber: string | null
   answeredAt: Date | null
 }
@@ -26,6 +27,14 @@ interface CallRow {
   assigned_to?: string | null
   from_number?: string | null
   answered_at?: string | null
+  twilio_call_sid?: string | null
+}
+
+interface ActiveCallRow {
+  call_sid: string
+  agent_id?: string | null
+  caller_number?: string | null
+  status?: string | null
 }
 
 interface CallActiveState {
@@ -34,6 +43,8 @@ interface CallActiveState {
   upsertFromVoipUser: (row: VoipUserRow) => void
   removeForUser: (userId: string) => void
   syncFromCallRow: (call: CallRow) => void
+  upsertFromActiveCallRow: (row: ActiveCallRow) => void
+  removeByCallSid: (callSid: string) => void
   clearAll: () => void
 }
 
@@ -119,6 +130,7 @@ export const useCallActiveStore = create<CallActiveState>()(
           const existing = next.get(call.assigned_to)
           next.set(call.assigned_to, {
             callId: call.id,
+            callSid: call.twilio_call_sid ?? existing?.callSid ?? existing?.callId,
             callerNumber:
               call.from_number ??
               existing?.callerNumber ??
@@ -126,6 +138,46 @@ export const useCallActiveStore = create<CallActiveState>()(
             answeredAt: call.answered_at
               ? new Date(call.answered_at)
               : existing?.answeredAt ?? null,
+          })
+          return { activeCalls: next }
+        }),
+
+      upsertFromActiveCallRow: (row) =>
+        set((state) => {
+          if (!row.agent_id) return state
+
+          const next = new Map(state.activeCalls)
+          const existing = next.get(row.agent_id)
+
+          if (row.status && shouldRemoveStatus.has(row.status)) {
+            next.delete(row.agent_id)
+            return { activeCalls: next }
+          }
+
+          if (row.status !== 'active') {
+            return state
+          }
+
+          next.set(row.agent_id, {
+            callId: existing?.callId ?? row.call_sid,
+            callSid: row.call_sid,
+            callerNumber:
+              row.caller_number ??
+              existing?.callerNumber ??
+              null,
+            answeredAt: existing?.answeredAt ?? null,
+          })
+
+          return { activeCalls: next }
+        }),
+
+      removeByCallSid: (callSid) =>
+        set((state) => {
+          const next = new Map(state.activeCalls)
+          Array.from(next.entries()).forEach(([userId, call]) => {
+            if (call.callSid === callSid || call.callId === callSid) {
+              next.delete(userId)
+            }
           })
           return { activeCalls: next }
         }),
