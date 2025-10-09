@@ -6,17 +6,20 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   try {
+    console.log('🚨 ===UPDATE-USER-CALL ENDPOINT HIT===')
     const body = await request.json()
+    console.log('🚨 Request body:', JSON.stringify(body, null, 2))
     const { callSid, agentId, action } = body
 
     if (!callSid || !agentId || !action) {
+      console.error('❌ MISSING REQUIRED FIELDS:', { callSid, agentId, action })
       return NextResponse.json(
         { error: 'Missing required fields: callSid, agentId, action' },
         { status: 400 }
       )
     }
 
-    console.log('📥 update-user-call:', { callSid, agentId, action, timestamp: new Date().toISOString() })
+    console.log('🚨 update-user-call PROCESSING:', { callSid, agentId, action, timestamp: new Date().toISOString() })
 
     const adminClient = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
