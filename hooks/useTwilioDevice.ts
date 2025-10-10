@@ -179,6 +179,13 @@ export function useTwilioDevice() {
                 setIncomingCall(null)
               }
             })
+
+            call.on('cancel', () => {
+              console.log('📴 Call canceled (caller hung up before answer):', callSid)
+              if (mounted) {
+                setIncomingCall(null)
+              }
+            })
           }
         })
 
