@@ -57,6 +57,23 @@ export function useTwilioDevice() {
           if (mounted) setError(error.message)
         })
 
+        // Handle token expiration by fetching a new token
+        twilioDevice.on('tokenWillExpire', async () => {
+          console.log('⏰ Token will expire soon, fetching new token...')
+          try {
+            const response = await fetch('/api/twilio/token')
+            if (!response.ok) {
+              throw new Error('Failed to fetch refresh token')
+            }
+            const data = await response.json()
+            twilioDevice.updateToken(data.token)
+            console.log('✅ Token refreshed successfully')
+          } catch (error) {
+            console.error('❌ Failed to refresh token:', error)
+            if (mounted) setError('Failed to refresh authentication token')
+          }
+        })
+
         twilioDevice.on('incoming', (call) => {
           console.log('📞 INCOMING CALL from:', call.parameters.From)
           if (mounted) {

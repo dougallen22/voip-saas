@@ -22,14 +22,21 @@ export default function ParkingLot({ onUnpark }: ParkingLotProps) {
 
   // Update park durations every second
   useEffect(() => {
-    const interval = setInterval(() => {
+    // Calculate durations immediately on mount/change
+    const calculateDurations = () => {
       const newDurations = new Map<string, number>()
       parkedCalls.forEach((call, id) => {
         const duration = Math.floor((Date.now() - call.parkedAt.getTime()) / 1000)
         newDurations.set(id, duration)
       })
       setParkDurations(newDurations)
-    }, 1000)
+    }
+
+    // Calculate immediately
+    calculateDurations()
+
+    // Then update every second
+    const interval = setInterval(calculateDurations, 1000)
 
     return () => clearInterval(interval)
   }, [parkedCalls])
@@ -77,32 +84,39 @@ export default function ParkingLot({ onUnpark }: ParkingLotProps) {
   return (
     <div
       ref={setNodeRef}
-      className={`fixed top-24 right-4 bottom-4 w-48 bg-white rounded-lg shadow-2xl border-2 transition-all ${
-        isOver ? 'border-blue-500 bg-blue-50' : 'border-slate-200'
+      className={`fixed left-4 right-4 bottom-4 h-64 lg:top-32 lg:left-auto lg:right-4 lg:bottom-4 lg:w-56 lg:h-auto backdrop-blur-lg bg-white/70 rounded-2xl shadow-xl border transition-all z-20 ${
+        isOver ? 'border-blue-400 bg-blue-50/50 shadow-blue-200/50 shadow-2xl' : 'border-white/20 shadow-slate-900/5'
       }`}
     >
-      {/* Header - Compact */}
-      <div className="bg-gradient-to-r from-slate-700 to-slate-800 text-white p-3 rounded-t-lg">
-        <div className="flex flex-col items-center gap-1">
+      {/* Header - Modern Glass */}
+      <div className="bg-gradient-to-br from-slate-50/80 to-white/60 backdrop-blur-sm p-4 rounded-t-2xl border-b border-white/20">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xl">🚗</span>
-            <span className="bg-white text-slate-800 px-2 py-0.5 rounded-full text-xs font-semibold">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-md">
+              <span className="text-white font-bold text-sm">P</span>
+            </div>
+            <h3 className="font-semibold text-sm text-slate-700">Parked</h3>
+          </div>
+          {parkedCallsArray.length > 0 && (
+            <span className="bg-blue-500 text-white px-2 py-0.5 rounded-full text-xs font-bold shadow-sm">
               {parkedCallsArray.length}
             </span>
-          </div>
-          <h3 className="font-bold text-sm text-center">Parking Lot</h3>
+          )}
         </div>
-        <p className="text-xs text-slate-300 mt-2 text-center leading-tight">
-          Drop calls here
+        <p className="text-xs text-slate-500 mt-2 leading-tight">
+          Drag calls here to park
         </p>
       </div>
 
       {/* Parked Calls List */}
-      <div className="overflow-y-auto p-2 space-y-2" style={{ maxHeight: 'calc(100vh - 160px)' }}>
+      <div className="overflow-y-auto p-3 space-y-3 h-[calc(100%-120px)] lg:h-auto" style={{ maxHeight: 'calc(100vh - 180px)' }}>
         {parkedCallsArray.length === 0 ? (
-          <div className="py-8 text-center text-slate-400">
-            <div className="text-3xl mb-1">🅿️</div>
-            <p className="text-xs px-2">No parked calls</p>
+          <div className="py-6 lg:py-12 text-center">
+            <div className="w-12 h-12 lg:w-16 lg:h-16 bg-gradient-to-br from-slate-100 to-slate-200 rounded-full flex items-center justify-center mx-auto mb-2 lg:mb-3 shadow-sm">
+              <span className="text-2xl lg:text-3xl font-bold text-slate-400">P</span>
+            </div>
+            <p className="text-xs text-slate-400 font-medium">No parked calls</p>
+            <p className="text-xs text-slate-300 mt-1">Drag active calls here</p>
           </div>
         ) : (
           <>
@@ -126,9 +140,14 @@ export default function ParkingLot({ onUnpark }: ParkingLotProps) {
 
       {/* Drop zone indicator when dragging over */}
       {isOver && (
-        <div className="absolute inset-0 bg-blue-500 bg-opacity-10 rounded-lg flex items-center justify-center pointer-events-none">
-          <div className="bg-blue-500 text-white px-3 py-2 rounded-lg font-semibold shadow-lg text-xs text-center">
-            Drop to park
+        <div className="absolute inset-0 backdrop-blur-sm bg-blue-500/10 rounded-2xl flex items-center justify-center pointer-events-none border-2 border-blue-400 border-dashed">
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white px-4 py-3 rounded-xl font-semibold shadow-2xl text-sm text-center backdrop-blur-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
+                <span className="text-white font-bold text-sm">P</span>
+              </div>
+              <span>Drop to park</span>
+            </div>
           </div>
         </div>
       )}

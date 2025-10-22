@@ -99,7 +99,7 @@ export async function POST(request: Request) {
       // Get the call record using the PSTN call SID
       const { data: callRecord, error: callFetchError } = await adminClient
         .from('calls')
-        .select('id, from_number, answered_at')
+        .select('id, from_number, answered_at, answered_by_user_id')
         .eq('twilio_call_sid', pstnCallSid)
         .single()
 
@@ -149,21 +149,82 @@ export async function POST(request: Request) {
 
       console.log('✅ Updated voip_users.current_call_id')
 
-      // Also update calls table status to 'active' and assigned_to
-      const { error: updateCallError } = await adminClient
+      // Also update calls table status to 'in-progress' and answered_by_user_id
+      console.log('🔄 Updating calls table:', { callId, agentId, answered_by_user_id: agentId })
+      const { data: updatedCall, error: updateCallError } = await adminClient
         .from('calls')
         .update({
-          assigned_to: agentId,
-          status: 'active',
+          answered_by_user_id: agentId,
+          status: 'in-progress',
           answered_at: new Date().toISOString()
         })
         .eq('id', callId)
+        .select()
 
       if (updateCallError) {
         console.error('❌ Failed to update call status:', updateCallError)
+        console.error('❌ Error details:', JSON.stringify(updateCallError, null, 2))
+      } else {
+        console.log('✅ Call record updated successfully:', updatedCall)
       }
 
-      console.log('✅ Database updated - ALL users will see active call instantly!', { agentId, callId })
+      console.log('✅ Database updated - ALL users will see active call instantly!', { agentId, callId, answered_by_user_id: agentId })
+
+      // Increment call counts for the agent ONLY if this is the first time answering
+      // (parking lot transfers should NOT increment counts)
+      const isFirstTimeAnswering = !callRecord.answered_by_user_id
+
+      if (isFirstTimeAnswering) {
+        console.log('📊 First time answering - will increment call counts')
+        try {
+          // First, reset counts if period has changed (day/week/month/year)
+          await adminClient.rpc('reset_call_counts')
+
+          // Get the call's direction to increment the right counters
+          const { data: callData } = await adminClient
+            .from('calls')
+            .select('direction')
+            .eq('id', callId)
+            .single()
+
+          const direction = callData?.direction
+
+          if (direction === 'inbound') {
+            // Increment all inbound counters (daily, weekly, monthly, yearly)
+            await adminClient.rpc('exec_sql', {
+              sql: `
+                UPDATE public.voip_users
+                SET
+                  today_inbound_calls = today_inbound_calls + 1,
+                  weekly_inbound_calls = weekly_inbound_calls + 1,
+                  monthly_inbound_calls = monthly_inbound_calls + 1,
+                  yearly_inbound_calls = yearly_inbound_calls + 1
+                WHERE id = '${agentId}'
+              `
+            })
+            console.log('✅ Incremented inbound call counts (daily/weekly/monthly/yearly) for agent:', agentId)
+          } else if (direction === 'outbound') {
+            // Increment all outbound counters (daily, weekly, monthly, yearly)
+            await adminClient.rpc('exec_sql', {
+              sql: `
+                UPDATE public.voip_users
+                SET
+                  today_outbound_calls = today_outbound_calls + 1,
+                  weekly_outbound_calls = weekly_outbound_calls + 1,
+                  monthly_outbound_calls = monthly_outbound_calls + 1,
+                  yearly_outbound_calls = yearly_outbound_calls + 1
+                WHERE id = '${agentId}'
+              `
+            })
+            console.log('✅ Incremented outbound call counts (daily/weekly/monthly/yearly) for agent:', agentId)
+          }
+        } catch (countError) {
+          console.error('⚠️ Failed to increment call counts:', countError)
+          // Don't fail the request if count increment fails
+        }
+      } else {
+        console.log('♻️ Call transfer from parking lot - NOT incrementing counts (already answered by:', callRecord.answered_by_user_id, ')')
+      }
 
       // Broadcast ring cancellation event to other agents for coordination
       const { error: ringError } = await adminClient

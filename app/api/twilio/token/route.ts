@@ -17,12 +17,16 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Create an access token
+    // Create an access token with 4 hour TTL
+    // Token will expire after 4 hours, but tokenWillExpire event fires 10 seconds before
     const token = new AccessToken(
       process.env.TWILIO_ACCOUNT_SID!,
       process.env.TWILIO_API_KEY!,
       process.env.TWILIO_API_SECRET!,
-      { identity: user.id }
+      {
+        identity: user.id,
+        ttl: 14400 // 4 hours in seconds (4 * 60 * 60)
+      }
     )
 
     // Create a Voice grant
@@ -32,6 +36,8 @@ export async function GET(request: Request) {
     })
 
     token.addGrant(voiceGrant)
+
+    console.log('✅ Generated Twilio access token for user:', user.id, '(TTL: 4 hours)')
 
     return NextResponse.json({
       token: token.toJwt(),

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import AgentCard from '@/components/super-admin/calling/AgentCard'
 import ParkingLot from '@/components/super-admin/calling/ParkingLot'
 import DraggableCallCard from '@/components/super-admin/calling/DraggableCallCard'
+import CallHistoryCard from '@/components/super-admin/calling/CallHistoryCard'
 import { useTwilioDevice } from '@/hooks/useTwilioDevice'
 import { useCallParkingStore } from '@/lib/stores/callParkingStore'
 import { useCallActiveStore } from '@/lib/stores/callActiveStore'
@@ -67,6 +68,7 @@ export default function CallingDashboard() {
   const removeActiveCallByCallSid = useCallActiveStore(state => state.removeByCallSid)
   const [optimisticTransferMap, setOptimisticTransferMap] = useState<Record<string, { callerNumber: string, isLoading: boolean }>>({}) // Show "transferring..." immediately
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null) // Track current user's role
+  const [callCountsByUser, setCallCountsByUser] = useState<Record<string, { incoming: number, outbound: number }>>({}) // Today's call counts per user
   const supabase = useMemo(() => createClient(), [])
 
   // Initialize Twilio Device for browser calling
@@ -194,9 +196,53 @@ export default function CallingDashboard() {
     }
   }, [supabase])
 
+  const fetchTodaysCallCounts = useCallback(async () => {
+    try {
+      // Fetch call counts directly from voip_users table
+      // These are incremented in real-time when calls are answered
+      // Fetching all periods (daily/weekly/monthly/yearly) even though only daily is shown now
+      const { data: voipUsers, error } = await supabase
+        .from('voip_users')
+        .select(`
+          id,
+          today_inbound_calls,
+          today_outbound_calls,
+          weekly_inbound_calls,
+          weekly_outbound_calls,
+          monthly_inbound_calls,
+          monthly_outbound_calls,
+          yearly_inbound_calls,
+          yearly_outbound_calls
+        `)
+
+      if (error) {
+        console.error('❌ Error fetching call counts:', error)
+        return
+      }
+
+      // Build counts map from voip_users (currently only showing daily)
+      const counts: Record<string, { incoming: number, outbound: number }> = {}
+
+      voipUsers?.forEach(user => {
+        counts[user.id] = {
+          incoming: user.today_inbound_calls || 0,
+          outbound: user.today_outbound_calls || 0
+        }
+        // Weekly/monthly/yearly counts are fetched but not used yet
+        // They're available in the data for future features
+      })
+
+      setCallCountsByUser(counts)
+      console.log('📊 Daily call counts loaded from voip_users:', counts)
+    } catch (error) {
+      console.error('❌ Error in fetchTodaysCallCounts:', error)
+    }
+  }, [supabase])
+
   useEffect(() => {
     fetchUsers()
     fetchCurrentUserRole()
+    fetchTodaysCallCounts()
 
     // Clean up old parked calls (older than 30 minutes) on page load
     const cleanupOldParkedCalls = async () => {
@@ -259,6 +305,20 @@ export default function CallingDashboard() {
           const oldRow = payload.old as any | null
 
           if (newRow) {
+            // Refresh call counts when voip_users changes (counts are stored there)
+            if (
+              newRow.today_inbound_calls !== undefined ||
+              newRow.today_outbound_calls !== undefined ||
+              newRow.weekly_inbound_calls !== undefined ||
+              newRow.weekly_outbound_calls !== undefined ||
+              newRow.monthly_inbound_calls !== undefined ||
+              newRow.monthly_outbound_calls !== undefined ||
+              newRow.yearly_inbound_calls !== undefined ||
+              newRow.yearly_outbound_calls !== undefined
+            ) {
+              fetchTodaysCallCounts()
+            }
+
             if (newRow.current_call_id) {
               upsertActiveCall(newRow)
             } else {
@@ -488,6 +548,7 @@ export default function CallingDashboard() {
   }, [
     fetchUsers,
     fetchCurrentUserRole,
+    fetchTodaysCallCounts,
     supabase,
     addParkedCallFromDb,
     removeParkedCall,
@@ -984,37 +1045,37 @@ export default function CallingDashboard() {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
         {/* Header */}
-        <header className="bg-white border-b border-slate-200">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <div className="flex items-center gap-4">
+        <header className="backdrop-blur-lg bg-white/70 border-b border-white/20 shadow-sm sticky top-0 z-10">
+        <div className="container mx-auto px-4 sm:px-6 py-4">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+            <div className="flex-1">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                 <Link
                   href="/super-admin/dashboard"
-                  className="text-slate-600 hover:text-slate-900"
+                  className="text-slate-600 hover:text-slate-900 transition-colors text-sm sm:text-base"
                 >
                   ← Back to Dashboard
                 </Link>
                 {/* Twilio Device Status */}
-                <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${isRegistered ? 'bg-green-500' : 'bg-gray-400'}`}></div>
-                  <span className="text-sm text-slate-600">
+                <div className="flex items-center gap-2 bg-white/50 px-3 py-1.5 rounded-full">
+                  <div className={`w-2 h-2 rounded-full ${isRegistered ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                  <span className="text-xs sm:text-sm text-slate-700 font-medium">
                     {isRegistered ? 'Ready to receive calls' : 'Connecting...'}
                   </span>
                 </div>
                 {twilioError && (
-                  <span className="text-sm text-red-600">Error: {twilioError}</span>
+                  <span className="text-xs sm:text-sm text-red-600 bg-red-50 px-3 py-1 rounded-full">Error: {twilioError}</span>
                 )}
               </div>
-              <h1 className="text-2xl font-bold text-slate-900 mt-2">Team Calling Dashboard (Unified View)</h1>
-              <p className="text-sm text-slate-600">Manage agents and route calls</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mt-2 bg-gradient-to-r from-slate-900 to-blue-900 bg-clip-text text-transparent">Team Calling Dashboard</h1>
+              <p className="text-xs sm:text-sm text-slate-600">Manage agents and route calls in real-time</p>
             </div>
             {currentUserRole === 'super_admin' && (
               <Link
                 href="/super-admin/agents"
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium"
+                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm hover:shadow-md transition-all text-sm sm:text-base"
               >
                 Manage Agents
               </Link>
@@ -1024,24 +1085,40 @@ export default function CallingDashboard() {
       </header>
 
       {/* Stats */}
-      <div className="container mx-auto px-6 pb-8">
-        <div className="grid md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="text-sm text-slate-600 mb-1">Total Agents</div>
-            <div className="text-3xl font-bold text-slate-900">{users.length}</div>
+      <div className="container mx-auto px-4 sm:px-6 pb-72 lg:pb-8 lg:pr-64 pt-3 sm:pt-6">
+        <div className="grid grid-cols-4 gap-2 sm:gap-3 lg:gap-6 mb-3 sm:mb-6 lg:mb-8">
+          <div className="backdrop-blur-lg bg-white/70 rounded-lg sm:rounded-xl shadow-sm sm:shadow-lg border border-white/20 p-2 sm:p-4 lg:p-6 hover:shadow-xl transition-all">
+            <div className="text-[9px] sm:text-xs lg:text-sm text-slate-600 mb-0.5 sm:mb-1 font-medium uppercase tracking-wide">Agents</div>
+            <div className="text-lg sm:text-2xl lg:text-3xl font-bold text-slate-900">{users.length}</div>
+            <div className="hidden sm:flex mt-2 items-center gap-1.5">
+              <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
+              <span className="text-xs text-slate-500">All users</span>
+            </div>
           </div>
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="text-sm text-slate-600 mb-1">Available</div>
-            <div className="text-3xl font-bold text-green-600">{availableCount}</div>
+          <div className="backdrop-blur-lg bg-white/70 rounded-lg sm:rounded-xl shadow-sm sm:shadow-lg border border-white/20 p-2 sm:p-4 lg:p-6 hover:shadow-xl transition-all">
+            <div className="text-[9px] sm:text-xs lg:text-sm text-slate-600 mb-0.5 sm:mb-1 font-medium uppercase tracking-wide">Available</div>
+            <div className="text-lg sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-green-500 to-emerald-600 bg-clip-text text-transparent">{availableCount}</div>
+            <div className="hidden sm:flex mt-2 items-center gap-1.5">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-xs text-green-700">Ready</span>
+            </div>
           </div>
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="text-sm text-slate-600 mb-1">On Call</div>
-            <div className="text-3xl font-bold text-red-600">{onCallCount}</div>
+          <div className="backdrop-blur-lg bg-white/70 rounded-lg sm:rounded-xl shadow-sm sm:shadow-lg border border-white/20 p-2 sm:p-4 lg:p-6 hover:shadow-xl transition-all">
+            <div className="text-[9px] sm:text-xs lg:text-sm text-slate-600 mb-0.5 sm:mb-1 font-medium uppercase tracking-wide">On Call</div>
+            <div className="text-lg sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-500 to-blue-600 bg-clip-text text-transparent">{onCallCount}</div>
+            <div className="hidden sm:flex mt-2 items-center gap-1.5">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              <span className="text-xs text-blue-700">Active</span>
+            </div>
           </div>
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="text-sm text-slate-600 mb-1">Offline</div>
-            <div className="text-3xl font-bold text-slate-400">
+          <div className="backdrop-blur-lg bg-white/70 rounded-lg sm:rounded-xl shadow-sm sm:shadow-lg border border-white/20 p-2 sm:p-4 lg:p-6 hover:shadow-xl transition-all">
+            <div className="text-[9px] sm:text-xs lg:text-sm text-slate-600 mb-0.5 sm:mb-1 font-medium uppercase tracking-wide">Offline</div>
+            <div className="text-lg sm:text-2xl lg:text-3xl font-bold text-slate-400">
               {users.length - availableCount - onCallCount}
+            </div>
+            <div className="hidden sm:flex mt-2 items-center gap-1.5">
+              <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
+              <span className="text-xs text-slate-500">Unavailable</span>
             </div>
           </div>
         </div>
@@ -1060,37 +1137,38 @@ export default function CallingDashboard() {
           }
 
           return (
-          <div className="mb-6 mr-52 p-6 bg-gradient-to-r from-sky-50 to-blue-50 border-2 border-blue-400 rounded-lg shadow-lg">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center animate-pulse">
-                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="mb-6 backdrop-blur-md bg-gradient-to-br from-blue-50/90 to-indigo-50/90 border-2 border-blue-400 rounded-2xl shadow-2xl shadow-blue-200/50 p-4 sm:p-6 animate-pulse">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
+                <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg flex-shrink-0">
+                  <svg className="w-6 h-6 sm:w-10 sm:h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-blue-900 mb-1">Incoming Call</p>
-                  <p className="text-2xl font-bold text-blue-800">{formatPhoneNumber(incomingCallMap[currentUserId].callerNumber)}</p>
+                <div className="flex-1">
+                  <p className="text-xs sm:text-sm font-semibold text-blue-700 uppercase tracking-wide mb-0.5">Incoming Call</p>
+                  <p className="text-xl sm:text-2xl font-bold font-mono text-blue-900">{formatPhoneNumber(incomingCallMap[currentUserId].callerNumber)}</p>
                 </div>
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
                 <button
                   onClick={handleAnswerCall}
-                  className="bg-green-600 hover:bg-green-700 text-white font-semibold py-4 px-8 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md"
+                  className="flex-1 sm:flex-initial bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold py-3 sm:py-4 px-6 sm:px-8 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
-                  Answer
+                  <span className="hidden sm:inline">Answer</span>
+                  <span className="sm:hidden">Accept</span>
                 </button>
                 <button
                   onClick={handleDeclineCall}
-                  className="bg-red-600 hover:bg-red-700 text-white font-semibold py-4 px-8 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md"
+                  className="flex-1 sm:flex-initial bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-3 sm:py-4 px-6 sm:px-8 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
-                  Decline
+                  <span>Decline</span>
                 </button>
               </div>
             </div>
@@ -1101,22 +1179,33 @@ export default function CallingDashboard() {
         {/* Agent Grid */}
         {isLoading ? (
           <div className="text-center py-12">
-            <div className="text-slate-600">Loading agents...</div>
+            <div className="backdrop-blur-lg bg-white/70 rounded-2xl shadow-lg border border-white/20 p-8 inline-block">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <div className="text-slate-700 font-medium">Loading agents...</div>
+            </div>
           </div>
         ) : users.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg">
-            <div className="text-slate-600 mb-4">No agents yet</div>
-            {currentUserRole === 'super_admin' && (
-              <Link
-                href="/super-admin/agents"
-                className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-medium"
-              >
-                Add Your First Agent
-              </Link>
-            )}
+          <div className="text-center py-12">
+            <div className="backdrop-blur-lg bg-white/70 rounded-2xl shadow-lg border border-white/20 p-8 max-w-md mx-auto">
+              <div className="w-16 h-16 bg-gradient-to-br from-slate-200 to-slate-300 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              </div>
+              <div className="text-slate-700 font-semibold text-lg mb-2">No agents yet</div>
+              <div className="text-slate-500 text-sm mb-6">Get started by adding your first agent to the team</div>
+              {currentUserRole === 'super_admin' && (
+                <Link
+                  href="/super-admin/agents"
+                  className="inline-block bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-6 py-3 rounded-lg font-medium shadow-sm hover:shadow-md transition-all"
+                >
+                  Add Your First Agent
+                </Link>
+              )}
+            </div>
           </div>
         ) : (
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="space-y-3">
             {users.map(user => {
               const remoteActiveCall = activeCallsByUser.get(user.id)
 
@@ -1168,9 +1257,18 @@ export default function CallingDashboard() {
                   onHoldCall={user.id === currentUserId ? holdCall : undefined}
                   onResumeCall={user.id === currentUserId ? resumeCall : undefined}
                   onEndCall={user.id === currentUserId ? endCall : undefined}
+                  incomingCallsCount={callCountsByUser[user.id]?.incoming || 0}
+                  outboundCallsCount={callCountsByUser[user.id]?.outbound || 0}
                 />
               )
             })}
+          </div>
+        )}
+
+        {/* Call History Card - Below all agents */}
+        {!isLoading && users.length > 0 && (
+          <div className="mt-6">
+            <CallHistoryCard />
           </div>
         )}
       </div>
