@@ -17,7 +17,6 @@ interface UnifiedActiveCallCardProps {
 
   // Interaction (only for current user)
   onEndCall?: () => void
-  onTransfer?: () => void
 
   // Dragging (only for current user)
   callObject?: any
@@ -32,7 +31,6 @@ export default function UnifiedActiveCallCard({
   agentId,
   agentName,
   onEndCall,
-  onTransfer,
   callObject,
   enableDrag = false
 }: UnifiedActiveCallCardProps) {
@@ -101,7 +99,7 @@ export default function UnifiedActiveCallCard({
       style={style}
       {...(enableDrag && isCurrentUser ? listeners : {})}
       {...(enableDrag && isCurrentUser ? attributes : {})}
-      className={`relative bg-gradient-to-r from-green-500 to-green-600 rounded-lg shadow-lg p-4 transition-all ${
+      className={`relative bg-gradient-to-r from-sky-400 to-blue-500 rounded-lg shadow-lg p-4 transition-all ${
         isDragging ? 'ring-2 ring-blue-500 shadow-2xl scale-105' : ''
       }`}
     >
@@ -124,20 +122,20 @@ export default function UnifiedActiveCallCard({
       <div className="flex items-start justify-between">
         <div className="flex-1">
           {/* Caller Info */}
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-3">
             <span className="text-2xl">📞</span>
             <div>
               <div className="text-white font-bold text-lg">
                 {callerName || formatPhoneNumber(callerId)}
               </div>
               {callerName && (
-                <div className="text-green-100 text-sm">{formatPhoneNumber(callerId)}</div>
+                <div className="text-sky-100 text-sm">{formatPhoneNumber(callerId)}</div>
               )}
             </div>
           </div>
 
           {/* Status indicator with duration */}
-          <div className="flex items-center gap-2 text-white text-sm">
+          <div className="flex items-center gap-2 text-white text-sm mb-2">
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>
               Active Call
@@ -149,43 +147,30 @@ export default function UnifiedActiveCallCard({
           </div>
 
           {/* Agent info */}
-          <div className="text-green-100 text-xs mt-1">
+          <div className="text-sky-100 text-xs">
             {isCurrentUser ? 'Your active call' : `On call with ${agentName}`}
           </div>
         </div>
 
         {/* Action buttons (only for current user) */}
-        {isCurrentUser && !isDragging && (
+        {isCurrentUser && !isDragging && onEndCall && (
           <div className="flex flex-col gap-2">
-            {onTransfer && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onTransfer()
-                }}
-                className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded-md text-sm font-semibold transition-colors"
-              >
-                Transfer
-              </button>
-            )}
-            {onEndCall && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onEndCall()
-                }}
-                className="bg-white text-red-600 hover:bg-red-50 px-3 py-1 rounded-md text-sm font-semibold transition-colors"
-              >
-                End Call
-              </button>
-            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onEndCall()
+              }}
+              className="bg-white text-red-600 hover:bg-red-50 px-3 py-1 rounded-md text-sm font-semibold transition-colors"
+            >
+              End Call
+            </button>
           </div>
         )}
       </div>
 
       {/* Drag instruction (only for current user) */}
       {enableDrag && isCurrentUser && (
-        <div className="mt-2 text-green-100 text-xs text-center opacity-80">
+        <div className="mt-3 text-sky-100 text-xs text-center opacity-80 leading-relaxed">
           Drag to parking lot to park
         </div>
       )}

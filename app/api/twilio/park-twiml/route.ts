@@ -22,7 +22,6 @@ export async function POST(request: Request) {
     // action callback will fire when the Dial ends (caller hangs up from parking lot)
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Your call is being placed on hold.</Say>
   <Dial action="${statusCallbackUrl}" method="POST">
     <Conference
       beep="false"

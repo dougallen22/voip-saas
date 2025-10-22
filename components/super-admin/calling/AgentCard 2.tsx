@@ -1,9 +1,11 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { useDroppable } from '@dnd-kit/core'
+import DraggableCallCard from './DraggableCallCard'
+import MultiCallCard from './MultiCallCard'
 import IncomingCallCard from './IncomingCallCard'
 import TransferCallCard from './TransferCallCard'
-import UnifiedActiveCallCard from './UnifiedActiveCallCard'
 
 interface CallState {
   call: any
@@ -19,7 +21,6 @@ interface AgentCardProps {
     full_name: string
     is_available: boolean
     current_call_id?: string
-    current_call_phone_number?: string | null
   }
   onToggleAvailability: (userId: string, newStatus: boolean) => void
   onCall: (userId: string) => void
@@ -42,6 +43,10 @@ interface AgentCardProps {
   onHoldCall?: (callSid: string) => void
   onResumeCall?: (callSid: string) => void
   onEndCall?: (callSid: string) => void
+  onTransfer?: (callSid: string, callerNumber: string) => void
+  // Transfer mode props
+  isTransferTarget?: boolean
+  onClick?: () => void
 }
 
 export default function AgentCard({
@@ -58,8 +63,13 @@ export default function AgentCard({
   selectedCallId,
   onHoldCall,
   onResumeCall,
-  onEndCall
+  onEndCall,
+  onTransfer,
+  isTransferTarget,
+  onClick
 }: AgentCardProps) {
+  const [callDuration, setCallDuration] = useState(0)
+
   // Make agent card droppable - only accept calls when agent is available and not busy
   const canAcceptCall = user.is_available && !activeCall && !user.current_call_id
 
@@ -73,6 +83,26 @@ export default function AgentCard({
     },
     disabled: !canAcceptCall,
   })
+
+  useEffect(() => {
+    if (activeCall && callStartTime) {
+      const interval = setInterval(() => {
+        const now = new Date()
+        const diff = Math.floor((now.getTime() - callStartTime.getTime()) / 1000)
+        setCallDuration(diff)
+      }, 1000)
+
+      return () => clearInterval(interval)
+    } else {
+      setCallDuration(0)
+    }
+  }, [activeCall, callStartTime])
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
 
   const getStatusColor = () => {
     if (activeCall || user.current_call_id) return 'bg-green-500 animate-pulse'
@@ -95,31 +125,17 @@ export default function AgentCard({
       .slice(0, 2)
   }
 
-  const formatPhoneNumber = (phone: string) => {
-    // Remove all non-digit characters
-    const digits = phone.replace(/\D/g, '')
-
-    // Handle US numbers (10 or 11 digits)
-    if (digits.length === 11 && digits[0] === '1') {
-      // Remove leading 1
-      const number = digits.slice(1)
-      return `${number.slice(0, 3)}-${number.slice(3, 6)}-${number.slice(6)}`
-    } else if (digits.length === 10) {
-      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
-    }
-
-    // Return original if not a standard format
-    return phone.replace('+', '')
-  }
-
   const isOnCall = !!user.current_call_id
 
   return (
     <div
       ref={setNodeRef}
+      onClick={onClick}
       className={`bg-white rounded-lg shadow-sm p-6 border transition-all ${
         isOver && canAcceptCall
           ? 'border-blue-500 border-2 bg-blue-50 shadow-lg scale-105'
+          : isTransferTarget
+          ? 'border-purple-500 border-2 bg-purple-50 shadow-lg cursor-pointer hover:scale-105'
           : 'border-slate-200'
       }`}
     >
@@ -135,18 +151,19 @@ export default function AgentCard({
       </div>
 
       {/* Status */}
-      <div className="mb-4">
-        <div className="flex items-center gap-2">
-          <div className={`w-3 h-3 rounded-full ${getStatusColor()}`}></div>
-          <span className="text-sm font-medium text-slate-700">{getStatusText()}</span>
-        </div>
-        {/* Show caller phone number when remote user is on call */}
-        {isOnCall && !activeCall && user.current_call_phone_number && (
-          <div className="mt-1 ml-5 text-lg font-bold text-green-700">
-            {formatPhoneNumber(user.current_call_phone_number)}
-          </div>
-        )}
+      <div className="flex items-center gap-2 mb-4">
+        <div className={`w-3 h-3 rounded-full ${getStatusColor()}`}></div>
+        <span className="text-sm font-medium text-slate-700">{getStatusText()}</span>
       </div>
+
+      {/* Transfer Target Indicator */}
+      {isTransferTarget && (
+        <div className="mb-4 p-3 bg-purple-100 border-2 border-purple-500 rounded-lg text-center animate-pulse">
+          <p className="text-purple-700 font-semibold text-sm">
+            Click to transfer call here
+          </p>
+        </div>
+      )}
 
       {/* Optimistic Transfer UI - Shows immediately while waiting for Twilio */}
       {optimisticTransfer && !incomingCall && !activeCall && (
@@ -200,19 +217,51 @@ export default function AgentCard({
         )
       })()}
 
-      {/* UNIFIED ACTIVE CALL DISPLAY - Works for both current user and remote users */}
-      {(isOnCall || activeCall) && (activeCall || callStartTime) && callStartTime && (
+      {/* Multi-Call Display - NEW */}
+      {activeCalls.length > 0 && onHoldCall && onResumeCall && onEndCall && (
+        <div className="mb-4 space-y-2">
+          {activeCalls.map((callState) => (
+            <MultiCallCard
+              key={callState.callSid}
+              callSid={callState.callSid}
+              callerNumber={callState.call.parameters.From || 'Unknown'}
+              startTime={callState.startTime}
+              isOnHold={callState.isOnHold}
+              isSelected={callState.callSid === selectedCallId}
+              onHold={() => onHoldCall(callState.callSid)}
+              onResume={() => onResumeCall(callState.callSid)}
+              onEnd={() => onEndCall(callState.callSid)}
+              onTransfer={
+                onTransfer && callState.callSid === selectedCallId
+                  ? () => onTransfer(callState.callSid, callState.call.parameters.From)
+                  : undefined
+              }
+              callObject={callState.call}
+              agentId={user.id}
+              agentName={user.full_name}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Legacy Single Call Display - Keep for backward compatibility */}
+      {activeCalls.length === 0 && (isOnCall || activeCall) && activeCall && callStartTime && (
         <div className="mb-4">
-          <UnifiedActiveCallCard
-            callerId={activeCall?.parameters?.From || 'Unknown'}
+          <DraggableCallCard
+            id={`call-${user.id}`}
+            callObject={activeCall}
+            callerId={activeCall.parameters.From || 'Unknown'}
             callerName={undefined}
-            answeredAt={callStartTime}
-            isCurrentUser={!!activeCall}
+            duration={callDuration}
             agentId={user.id}
             agentName={user.full_name}
-            onEndCall={activeCall ? () => activeCall.disconnect() : undefined}
-            callObject={activeCall}
-            enableDrag={!!activeCall}
+            onEndCall={() => activeCall.disconnect()}
+            onTransfer={
+              onTransfer
+                ? () => onTransfer(activeCall.parameters.CallSid, activeCall.parameters.From)
+                : undefined
+            }
+            isParked={false}
           />
         </div>
       )}

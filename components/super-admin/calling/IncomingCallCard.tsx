@@ -5,6 +5,17 @@ interface IncomingCallCardProps {
 }
 
 export default function IncomingCallCard({ callerNumber }: IncomingCallCardProps) {
+  const formatPhoneNumber = (phone: string) => {
+    const digits = phone.replace(/\D/g, '')
+    if (digits.length === 11 && digits[0] === '1') {
+      const number = digits.slice(1)
+      return `${number.slice(0, 3)}-${number.slice(3, 6)}-${number.slice(6)}`
+    } else if (digits.length === 10) {
+      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
+    }
+    return phone.replace('+', '')
+  }
+
   return (
     <div className="mb-4 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-orange-400 rounded-lg animate-pulse">
       <div className="flex items-center gap-2">
@@ -15,7 +26,7 @@ export default function IncomingCallCard({ callerNumber }: IncomingCallCardProps
         </div>
         <div className="flex-1">
           <p className="text-sm font-semibold text-orange-900">Incoming Call</p>
-          <p className="text-lg font-bold text-orange-800">{callerNumber}</p>
+          <p className="text-lg font-bold text-orange-800">{formatPhoneNumber(callerNumber)}</p>
         </div>
       </div>
     </div>

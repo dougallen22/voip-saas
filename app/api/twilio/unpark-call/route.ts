@@ -85,11 +85,9 @@ export async function POST(request: Request) {
     // Generate TwiML to connect the parked call to the new agent's browser client
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Connecting you to an agent now.</Say>
   <Dial timeout="30">
     <Client>${newAgentId}</Client>
   </Dial>
-  <Say>The agent could not be reached. Goodbye.</Say>
   <Hangup/>
 </Response>`
 

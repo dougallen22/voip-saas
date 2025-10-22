@@ -57,6 +57,11 @@ export default function CallingDashboard() {
   const [incomingCallMap, setIncomingCallMap] = useState<Record<string, { callSid: string, callerNumber: string, twilioCall: any, isTransfer: boolean }>>({})
   const [pendingTransferTo, setPendingTransferTo] = useState<string | null>(null) // Track which agent is expecting a transfer
   const pendingTransferToRef = useRef<string | null>(null) // Persist across renders to prevent timing issues
+  const [transferMode, setTransferMode] = useState<{
+    active: boolean
+    callSid: string | null
+    callerNumber: string | null
+  } | null>(null)
   const [processedTransferCallSids, setProcessedTransferCallSids] = useState<Set<string>>(new Set())
   const activeCallsByUser = useCallActiveStore(state => state.activeCalls)
   const hydrateActiveCalls = useCallActiveStore(state => state.hydrateFromUsers)
@@ -263,19 +268,6 @@ export default function CallingDashboard() {
               upsertActiveCall(newRow)
             } else {
               removeActiveCallForUser(newRow.id)
-
-              // ============================================================================
-              // REALTIME SYNC FIX: Clear incoming call UI when current_call_id becomes null
-              // ============================================================================
-              // When a call ends, current_call_id is set to null in the backend
-              // This triggers a realtime UPDATE event with current_call_id = null
-              // We need to clear the incoming call UI to prevent ghost incoming calls
-              // See: app/api/twilio/update-user-call/route.ts lines 217-228
-              setIncomingCallMap(prev => {
-                const updated = { ...prev }
-                delete updated[newRow.id]
-                return updated
-              })
             }
 
             setUsers(prev => {
@@ -556,13 +548,7 @@ export default function CallingDashboard() {
             setIncomingCallMap({}) // Clear incoming call UI
           }
 
-          // ============================================================================
-          // REALTIME SYNC FIX: Handle ring_cancel to clear ghost incoming calls
-          // ============================================================================
-          // When a call ends, the backend broadcasts ring_cancel event
-          // This clears incoming call UI on all agents' screens
-          // Prevents ghost incoming calls after one agent hangs up
-          // See: app/api/twilio/update-user-call/route.ts lines 252-270
+          // If caller hung up before anyone answered
           if (event.event_type === 'ring_cancel') {
             console.log('🚫 Caller hung up - clearing all incoming call UIs')
             setIncomingCallMap({}) // Clear incoming call UI for all agents
@@ -682,55 +668,42 @@ export default function CallingDashboard() {
       return
     }
 
-    console.log('📞 Attempting to answer call')
+    console.log('📞 Attempting to answer call from agent card')
+
+    const callSid = incomingCall.parameters.CallSid
 
     try {
-      // CRITICAL FIX: Accept call FIRST to establish audio
-      // This gives us access to the Call object with parentCallSid
-      console.log('🎧 Accepting call to establish audio connection')
+      console.log('🔄 Sending claim-call API request', { callSid, agentId: currentUserId })
+
+      // Try to claim the call atomically
+      const claimResponse = await fetch('/api/twilio/claim-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callSid: callSid,
+          agentId: currentUserId
+        })
+      })
+
+      const claimResult = await claimResponse.json()
+      console.log('📥 claim-call API response', { status: claimResponse.status, result: claimResult })
+
+      if (!claimResult.success) {
+        console.log('⚠️ Call already claimed by another agent')
+        setIncomingCallMap({}) // Clear UI
+        // Could show a toast notification here
+        return
+      }
+
+      console.log('✅ Successfully claimed call, now accepting')
+
+      // We won the race - accept the call
       await acceptCall()
-
-      console.log('📞 Call accepted, audio connected')
-
-      // Now check if we need to claim (in case another agent also answered)
-      // Use a small delay to let Twilio events propagate
-      setTimeout(async () => {
-        try {
-          const callSid = incomingCall.parameters.CallSid
-
-          console.log('🔄 Sending claim-call API request', { callSid, agentId: currentUserId })
-
-          const claimResponse = await fetch('/api/twilio/claim-call', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              callSid: callSid,
-              agentId: currentUserId
-            })
-          })
-
-          const claimResult = await claimResponse.json()
-          console.log('📥 claim-call API response', { status: claimResponse.status, result: claimResult })
-
-          if (!claimResult.success) {
-            console.log('⚠️ Another agent claimed - they will keep the call')
-            // Another agent claimed it, so disconnect our call
-            if (activeCall) {
-              activeCall.disconnect()
-            }
-          } else {
-            console.log('✅ Successfully claimed call')
-          }
-        } catch (error) {
-          console.error('❌ Error in post-answer claim:', error)
-        }
-      }, 100)
-
       setIncomingCallMap({})
 
     } catch (error) {
-      console.error('❌ Error answering call:', error)
-      setIncomingCallMap({})
+      console.error('❌ Error claiming call:', error)
+      // Could show error toast here
     }
   }
 
@@ -794,6 +767,66 @@ export default function CallingDashboard() {
     }
   }
 
+  const handleInitiateTransfer = (callSid: string, callerNumber: string) => {
+    console.log('🔄 Initiating transfer mode for call:', callSid)
+    setTransferMode({
+      active: true,
+      callSid,
+      callerNumber
+    })
+    alert('Transfer mode active - click an available agent to transfer this call')
+  }
+
+  const handleCancelTransfer = () => {
+    console.log('❌ Canceling transfer mode')
+    setTransferMode(null)
+  }
+
+  const handleTransferToAgent = async (targetAgentId: string) => {
+    if (!transferMode || !transferMode.callSid) return
+
+    console.log('🔄 Transferring call to agent:', targetAgentId)
+
+    try {
+      // Set pending transfer state BEFORE calling API (both state and ref)
+      setPendingTransferTo(targetAgentId)
+      pendingTransferToRef.current = targetAgentId
+
+      // Call transfer API
+      const response = await fetch('/api/twilio/transfer-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callSid: transferMode.callSid,
+          targetAgentId: targetAgentId,
+          callerNumber: transferMode.callerNumber,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setPendingTransferTo(null)
+        pendingTransferToRef.current = null
+        throw new Error(data.error || 'Failed to transfer call')
+      }
+
+      console.log('✅ Transfer initiated - waiting for target agent to answer')
+
+      // Clear transfer mode
+      setTransferMode(null)
+
+      // The pendingTransferTo state will cause incoming call to show ONLY to target agent
+      // This happens in existing useEffect (lines 284-350)
+
+    } catch (error: any) {
+      console.error('❌ Transfer failed:', error)
+      alert(`Failed to transfer call: ${error.message}`)
+      setPendingTransferTo(null)
+      pendingTransferToRef.current = null
+      setTransferMode(null)
+    }
+  }
 
   const handleDragStart = (event: DragStartEvent) => {
     console.log('🎯 Drag started:', event.active.id)
@@ -867,7 +900,6 @@ export default function CallingDashboard() {
           body: JSON.stringify({
             callSid: callSid,
             userId: currentUserId,
-            userName: users.find(u => u.id === currentUserId)?.full_name,
             callerNumber: callerNumber,
             callId: null,
             tempId: tempId, // Pass temp ID so we can dedupe later
@@ -1047,30 +1079,18 @@ export default function CallingDashboard() {
         </div>
 
         {/* Multi-Agent Incoming Call Bar - ONLY for multi-agent ring (not transfers) */}
-        {incomingCall && !activeCall && currentUserId && incomingCallMap[currentUserId] && !incomingCallMap[currentUserId].isTransfer && (() => {
-          const formatPhoneNumber = (phone: string) => {
-            const digits = phone.replace(/\D/g, '')
-            if (digits.length === 11 && digits[0] === '1') {
-              const number = digits.slice(1)
-              return `${number.slice(0, 3)}-${number.slice(3, 6)}-${number.slice(6)}`
-            } else if (digits.length === 10) {
-              return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
-            }
-            return phone.replace('+', '')
-          }
-
-          return (
-          <div className="mb-6 mr-52 p-6 bg-gradient-to-r from-sky-50 to-blue-50 border-2 border-blue-400 rounded-lg shadow-lg">
+        {incomingCall && !activeCall && currentUserId && incomingCallMap[currentUserId] && !incomingCallMap[currentUserId].isTransfer && (
+          <div className="mb-6 p-6 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-orange-400 rounded-lg shadow-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center animate-pulse">
+                <div className="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center animate-pulse">
                   <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-blue-900 mb-1">Incoming Call</p>
-                  <p className="text-2xl font-bold text-blue-800">{formatPhoneNumber(incomingCallMap[currentUserId].callerNumber)}</p>
+                  <p className="text-sm font-semibold text-orange-900 mb-1">Incoming Call</p>
+                  <p className="text-2xl font-bold text-orange-800">{incomingCallMap[currentUserId].callerNumber}</p>
                 </div>
               </div>
               <div className="flex gap-3">
@@ -1095,8 +1115,37 @@ export default function CallingDashboard() {
               </div>
             </div>
           </div>
-          )
-        })()}
+        )}
+
+        {/* Transfer Mode Banner */}
+        {transferMode?.active && (
+          <div className="mb-6 p-4 bg-purple-100 border-2 border-purple-500 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center animate-pulse">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-purple-900">Transfer Mode Active</p>
+                  <p className="text-lg font-bold text-purple-800">
+                    Transferring: {transferMode.callerNumber}
+                  </p>
+                  <p className="text-xs text-purple-700 mt-1">
+                    Click an available agent to complete transfer
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleCancelTransfer}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors"
+              >
+                Cancel Transfer
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Agent Grid */}
         {isLoading ? (
@@ -1128,13 +1177,15 @@ export default function CallingDashboard() {
                   onCall={handleCall}
                   activeCall={
                     user.id === currentUserId
-                      ? activeCall // Current user ONLY: use LOCAL Twilio Call object
-                      : null // Remote users: NO activeCall object (they can't control it)
+                      ? activeCall // Current user: use LOCAL Twilio Call object
+                      : (remoteActiveCall
+                          ? { parameters: { From: remoteActiveCall.callerNumber || 'Unknown' } }
+                          : null)
                   }
                   callStartTime={
                     user.id === currentUserId
                       ? callStartTime
-                      : remoteActiveCall?.answeredAt ?? null // Remote users: timestamp from store
+                      : remoteActiveCall?.answeredAt ?? null
                   }
                   incomingCall={incomingCallMap[user.id]}
                   optimisticTransfer={optimisticTransferMap[user.id]}
@@ -1168,6 +1219,9 @@ export default function CallingDashboard() {
                   onHoldCall={user.id === currentUserId ? holdCall : undefined}
                   onResumeCall={user.id === currentUserId ? resumeCall : undefined}
                   onEndCall={user.id === currentUserId ? endCall : undefined}
+                  onTransfer={user.id === currentUserId && !transferMode?.active ? handleInitiateTransfer : undefined}
+                  isTransferTarget={transferMode?.active && user.is_available && !user.current_call_id}
+                  onClick={transferMode?.active && user.is_available && !user.current_call_id ? () => handleTransferToAgent(user.id) : undefined}
                 />
               )
             })}

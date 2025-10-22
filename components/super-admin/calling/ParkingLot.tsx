@@ -77,37 +77,35 @@ export default function ParkingLot({ onUnpark }: ParkingLotProps) {
   return (
     <div
       ref={setNodeRef}
-      className={`fixed top-20 right-4 w-80 bg-white rounded-lg shadow-2xl border-2 transition-all ${
+      className={`fixed top-24 right-4 bottom-4 w-48 bg-white rounded-lg shadow-2xl border-2 transition-all ${
         isOver ? 'border-blue-500 bg-blue-50' : 'border-slate-200'
       }`}
-      style={{ maxHeight: 'calc(100vh - 100px)' }}
     >
-      {/* Header */}
-      <div className="bg-gradient-to-r from-slate-700 to-slate-800 text-white p-4 rounded-t-lg">
-        <div className="flex items-center justify-between">
+      {/* Header - Compact */}
+      <div className="bg-gradient-to-r from-slate-700 to-slate-800 text-white p-3 rounded-t-lg">
+        <div className="flex flex-col items-center gap-1">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🚗</span>
-            <h3 className="font-bold text-lg">Parking Lot</h3>
+            <span className="text-xl">🚗</span>
+            <span className="bg-white text-slate-800 px-2 py-0.5 rounded-full text-xs font-semibold">
+              {parkedCallsArray.length}
+            </span>
           </div>
-          <span className="bg-white text-slate-800 px-2 py-1 rounded-full text-sm font-semibold">
-            {parkedCallsArray.length}
-          </span>
+          <h3 className="font-bold text-sm text-center">Parking Lot</h3>
         </div>
-        <p className="text-xs text-slate-300 mt-1">
-          Drop calls here to park them
+        <p className="text-xs text-slate-300 mt-2 text-center leading-tight">
+          Drop calls here
         </p>
       </div>
 
       {/* Parked Calls List */}
-      <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+      <div className="overflow-y-auto p-2 space-y-2" style={{ maxHeight: 'calc(100vh - 160px)' }}>
         {parkedCallsArray.length === 0 ? (
-          <div className="p-8 text-center text-slate-400">
-            <div className="text-4xl mb-2">🅿️</div>
-            <p className="text-sm">No parked calls</p>
-            <p className="text-xs mt-1">Drag active calls here</p>
+          <div className="py-8 text-center text-slate-400">
+            <div className="text-3xl mb-1">🅿️</div>
+            <p className="text-xs px-2">No parked calls</p>
           </div>
         ) : (
-          <div className="p-3 space-y-3">
+          <>
             {parkedCallsArray.map((call) => (
               <DraggableCallCard
                 key={call.id}
@@ -122,15 +120,15 @@ export default function ParkingLot({ onUnpark }: ParkingLotProps) {
                 onRemoveParked={() => handleRemoveParkedCall(call.id)}
               />
             ))}
-          </div>
+          </>
         )}
       </div>
 
       {/* Drop zone indicator when dragging over */}
       {isOver && (
         <div className="absolute inset-0 bg-blue-500 bg-opacity-10 rounded-lg flex items-center justify-center pointer-events-none">
-          <div className="bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg">
-            Drop to park call
+          <div className="bg-blue-500 text-white px-3 py-2 rounded-lg font-semibold shadow-lg text-xs text-center">
+            Drop to park
           </div>
         </div>
       )}
