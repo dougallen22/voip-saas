@@ -23,6 +23,25 @@ export function useTwilioDevice() {
 
   useEffect(() => {
     let mounted = true
+    let refreshTimer: NodeJS.Timeout | null = null
+
+    async function refreshToken() {
+      try {
+        console.log('🔄 Periodic token refresh triggered')
+        const response = await fetch('/api/twilio/token')
+        if (!response.ok) {
+          throw new Error('Failed to fetch refresh token')
+        }
+        const data = await response.json()
+
+        if (deviceRef.current) {
+          deviceRef.current.updateToken(data.token)
+          console.log('✅ Token refreshed successfully (periodic)')
+        }
+      } catch (error) {
+        console.error('❌ Failed to refresh token (periodic):', error)
+      }
+    }
 
     async function initializeDevice() {
       try {
@@ -35,10 +54,11 @@ export function useTwilioDevice() {
         setCurrentUserId(data.identity)
         userIdRef.current = data.identity // Store in ref for event handlers
 
-        // Create and setup device
+        // Create and setup device with token refresh configuration
         const twilioDevice = new Device(data.token, {
           logLevel: 1, // Debug level
           codecPreferences: [Call.Codec.Opus, Call.Codec.PCMU],
+          tokenRefreshMs: 30000, // Fire tokenWillExpire 30 seconds before expiration
         })
 
         // Set up event listeners
@@ -59,19 +79,44 @@ export function useTwilioDevice() {
 
         // Handle token expiration by fetching a new token
         twilioDevice.on('tokenWillExpire', async () => {
-          console.log('⏰ Token will expire soon, fetching new token...')
+          console.log('⏰ Token will expire soon (30s warning), fetching new token...')
           try {
             const response = await fetch('/api/twilio/token')
             if (!response.ok) {
-              throw new Error('Failed to fetch refresh token')
+              throw new Error(`Failed to fetch refresh token: ${response.status}`)
             }
             const data = await response.json()
+
+            if (!data.token) {
+              throw new Error('No token in response')
+            }
+
             twilioDevice.updateToken(data.token)
-            console.log('✅ Token refreshed successfully')
+            console.log('✅ Token refreshed successfully via tokenWillExpire event')
           } catch (error) {
-            console.error('❌ Failed to refresh token:', error)
+            console.error('❌ Failed to refresh token via tokenWillExpire:', error)
             if (mounted) setError('Failed to refresh authentication token')
+
+            // Try one more time after a short delay
+            setTimeout(async () => {
+              try {
+                console.log('🔄 Retrying token refresh...')
+                const retryResponse = await fetch('/api/twilio/token')
+                const retryData = await retryResponse.json()
+                twilioDevice.updateToken(retryData.token)
+                console.log('✅ Token refreshed successfully on retry')
+                if (mounted) setError(null)
+              } catch (retryError) {
+                console.error('❌ Token refresh retry failed:', retryError)
+              }
+            }, 2000)
           }
+        })
+
+        // Handle when device state changes (for debugging)
+        twilioDevice.on('tokenExpired', () => {
+          console.error('💥 TOKEN EXPIRED! This should not happen - tokenWillExpire should have refreshed it.')
+          if (mounted) setError('Token expired - please refresh the page')
         })
 
         twilioDevice.on('incoming', (call) => {
@@ -212,6 +257,12 @@ export function useTwilioDevice() {
         if (mounted) {
           setDevice(twilioDevice)
           deviceRef.current = twilioDevice
+
+          // Set up periodic token refresh as a backup
+          // Refresh every 3.5 hours (before 4-hour expiration)
+          const REFRESH_INTERVAL = 3.5 * 60 * 60 * 1000 // 3.5 hours in milliseconds
+          refreshTimer = setInterval(refreshToken, REFRESH_INTERVAL)
+          console.log('⏲️ Periodic token refresh scheduled every 3.5 hours')
         }
       } catch (err: any) {
         console.error('❌ TWILIO DEVICE INITIALIZATION ERROR:', err)
@@ -228,6 +279,14 @@ export function useTwilioDevice() {
 
     return () => {
       mounted = false
+
+      // Clear periodic refresh timer
+      if (refreshTimer) {
+        clearInterval(refreshTimer)
+        console.log('🧹 Cleared periodic token refresh timer')
+      }
+
+      // Cleanup device
       if (deviceRef.current) {
         deviceRef.current.unregister()
         deviceRef.current.destroy()
