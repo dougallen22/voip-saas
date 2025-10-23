@@ -18,10 +18,10 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Get agent details
+    // Get agent details including organization_id
     const { data: agent, error: agentError } = await adminClient
       .from('voip_users')
-      .select('id, is_available')
+      .select('id, is_available, organization_id')
       .eq('id', agentId)
       .single()
 
@@ -33,15 +33,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Agent is not available' }, { status: 400 })
     }
 
+    // Use agent's org ID, or fallback to default organization
+    const organizationId = agent.organization_id || '9abcaa0f-5e39-41f5-b269-2b5872720768'
+
     // Create call record in database
     const { data: call, error: callError } = await adminClient
       .from('calls')
       .insert({
+        organization_id: organizationId,
         from_number: fromNumber || 'Admin',
         to_number: 'Agent',
         assigned_to: agentId,
         status: 'ringing',
         direction: 'outbound',
+        twilio_call_sid: `INTERNAL-${Date.now()}`, // Placeholder for internal calls
       })
       .select()
       .single()

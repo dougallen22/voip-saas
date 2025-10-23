@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Device, Call } from '@twilio/voice-sdk'
+import { formatToE164 } from '@/lib/utils/phoneFormatter'
 
 interface CallState {
   call: Call
@@ -18,6 +19,8 @@ export function useTwilioDevice() {
   const [error, setError] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [callStartTime, setCallStartTime] = useState<Date | null>(null) // Keep for backward compatibility
+  const [outboundCall, setOutboundCall] = useState<Call | null>(null) // Outbound call state
+  const [outboundCallStatus, setOutboundCallStatus] = useState<string | null>(null) // 'connecting', 'ringing', 'answered', 'ended'
   const deviceRef = useRef<Device | null>(null)
   const userIdRef = useRef<string | null>(null) // Store userId in ref for event handlers
 
@@ -359,6 +362,116 @@ export function useTwilioDevice() {
     }
   }
 
+  // NEW: Make outbound call
+  const makeOutboundCall = async (phoneNumber: string, contactName: string) => {
+    if (!device) {
+      throw new Error('Device not ready. Please refresh the page.')
+    }
+
+    if (!isRegistered) {
+      throw new Error('Device not registered. Please wait a moment and try again.')
+    }
+
+    try {
+      console.log('📞 Initiating outbound call to:', phoneNumber, 'Contact:', contactName)
+
+      // Format phone number to E.164 (will throw error if invalid)
+      const formattedPhone = formatToE164(phoneNumber)
+
+      setOutboundCallStatus('connecting')
+
+      // Initiate the call using Twilio Device SDK
+      const call = await device.connect({
+        params: {
+          To: formattedPhone,
+          contactName: contactName || 'Unknown'
+        }
+      })
+
+      console.log('✅ Call initiated, CallSid:', call.parameters.CallSid)
+      setOutboundCall(call)
+
+      // Set up event listeners for the outbound call
+      call.on('ringing', (hasEarlyMedia: boolean) => {
+        console.log('📞 Call is ringing...', hasEarlyMedia ? '(with early media)' : '')
+        setOutboundCallStatus('ringing')
+      })
+
+      call.on('accept', async () => {
+        console.log('✅ Call accepted (answered)')
+        setOutboundCallStatus('answered')
+        setActiveCall(call)
+        setCallStartTime(new Date())
+
+        // Update database to track this call
+        if (userIdRef.current) {
+          try {
+            const callSid = call.parameters.CallSid
+            await fetch('/api/twilio/update-user-call', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                callSid: callSid,
+                agentId: userIdRef.current,
+                action: 'start'
+              })
+            })
+          } catch (error) {
+            console.error('❌ Failed to update user call status:', error)
+          }
+        }
+      })
+
+      call.on('disconnect', async () => {
+        console.log('📴 Call disconnected')
+        setOutboundCallStatus('ended')
+        setOutboundCall(null)
+        setActiveCall(null)
+        setCallStartTime(null)
+
+        // Clear database call tracking
+        if (userIdRef.current) {
+          try {
+            const callSid = call.parameters.CallSid
+            await fetch('/api/twilio/update-user-call', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                callSid: callSid,
+                agentId: userIdRef.current,
+                action: 'end'
+              })
+            })
+          } catch (error) {
+            console.error('❌ Failed to clear user call status:', error)
+          }
+        }
+      })
+
+      call.on('cancel', () => {
+        console.log('⚠️ Call canceled')
+        setOutboundCallStatus('ended')
+        setOutboundCall(null)
+        setActiveCall(null)
+      })
+
+      call.on('error', (error) => {
+        console.error('❌ Call error:', error)
+        setError(error.message)
+        setOutboundCallStatus('ended')
+        setOutboundCall(null)
+        setActiveCall(null)
+      })
+
+      return call
+    } catch (error: any) {
+      console.error('❌ Error making outbound call:', error)
+      setOutboundCallStatus('ended')
+      setError(error.message)
+      throw error
+    }
+  }
+
   return {
     device,
     incomingCall,
@@ -375,5 +488,8 @@ export function useTwilioDevice() {
     resumeCall, // NEW
     switchToCall, // NEW
     endCall, // NEW
+    makeOutboundCall, // NEW
+    outboundCall, // NEW
+    outboundCallStatus, // NEW
   }
 }

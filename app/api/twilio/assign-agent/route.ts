@@ -24,7 +24,6 @@ export async function POST(request: Request) {
     const { data: availableAgents } = await adminClient
       .from('voip_users')
       .select('*')
-      .is('organization_id', null)
       .eq('is_available', true)
       .in('role', ['agent', 'super_admin'])
       .limit(1)

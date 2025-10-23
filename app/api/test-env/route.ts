@@ -26,7 +26,6 @@ export async function GET() {
         const { data: availableAgents, error } = await adminClient
           .from('voip_users')
           .select('*')
-          .is('organization_id', null)
           .eq('is_available', true)
           .in('role', ['agent', 'super_admin'])
 

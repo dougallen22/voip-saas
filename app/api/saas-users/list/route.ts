@@ -12,7 +12,7 @@ export async function GET() {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Get all SaaS users (organization_id IS NULL AND role = 'agent' OR 'super_admin')
+    // Get all SaaS users (role = 'agent' OR 'super_admin')
     const { data: voipUsers, error: voipError } = await adminClient
       .from('voip_users')
       .select(`
@@ -22,7 +22,6 @@ export async function GET() {
           answered_at
         )
       `)
-      .is('organization_id', null)
       .in('role', ['agent', 'super_admin'])
       .order('created_at', { ascending: false })
 
