@@ -40,19 +40,13 @@
 
 ### Step 2: Configure Webhook URLs in Twilio
 
-You'll need to expose your local server to the internet using ngrok or similar:
-
-1. Install ngrok: `brew install ngrok` (Mac) or download from https://ngrok.com
-2. Run ngrok: `ngrok http 3000`
-3. Copy the HTTPS URL (e.g., `https://abc123.ngrok.io`)
-
-Then configure your Twilio phone number:
+Configure your Twilio phone number to point to your production Vercel deployment:
 
 1. Go to https://console.twilio.com/us1/develop/phone-numbers/manage/incoming
 2. Click on your phone number
 3. Scroll to "Voice Configuration"
 4. Set **"A CALL COMES IN"** to:
-   - **Webhook**: `https://YOUR-NGROK-URL.ngrok.io/api/twilio/voice`
+   - **Webhook**: `https://voip-saas.vercel.app/api/twilio/voice`
    - **HTTP POST**
 
 ### Step 3: Run the Database Migration
@@ -130,13 +124,14 @@ After completing the above setup, you can:
 
 ## Testing Checklist:
 
-- [ ] Ngrok running and exposing localhost:3000
-- [ ] Twilio phone number configured with webhook URL
+- [ ] Twilio phone number configured with production webhook URL
+- [ ] TwiML app configured with production webhook URL
 - [ ] Database migration run successfully
 - [ ] TWILIO_PHONE_NUMBER set in .env.local
-- [ ] Dev server restarted to pick up new env variables
+- [ ] NEXT_PUBLIC_APP_URL set to https://voip-saas.vercel.app
+- [ ] Code deployed to Vercel
 - [ ] Test call to Twilio number
-- [ ] Check server logs for webhook calls
+- [ ] Check Vercel logs for webhook calls
 - [ ] Verify call appears in database
 - [ ] Verify agent sees call in dashboard
 
@@ -145,8 +140,8 @@ After completing the above setup, you can:
 ## Troubleshooting:
 
 **Calls not being received:**
-- Check ngrok is running and URL is correct in Twilio
-- Check server logs for webhook errors
+- Check Twilio webhook URL is set to https://voip-saas.vercel.app/api/twilio/voice
+- Check Vercel deployment logs for errors
 - Verify phone number format (+1234567890)
 
 **Agent not being assigned:**

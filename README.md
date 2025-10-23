@@ -112,22 +112,23 @@ FROM auth.users
 WHERE email = 'admin@example.com';
 ```
 
-### 6. Configure Twilio Webhooks (for local testing)
+### 6. Configure Twilio Webhooks
 
-Use ngrok to expose your local server:
-
-```bash
-ngrok http 3000
-```
+Configure Twilio to point to your production Vercel deployment:
 
 Update Twilio phone number webhook to:
 ```
-https://your-ngrok-url.ngrok-free.app/api/twilio/voice
+https://voip-saas.vercel.app/api/twilio/voice
 ```
 
-Update `NEXT_PUBLIC_APP_URL` in `.env.local`:
+Update Twilio TwiML app webhook to:
 ```
-NEXT_PUBLIC_APP_URL=https://your-ngrok-url.ngrok-free.app
+https://voip-saas.vercel.app/api/twilio/outbound
+```
+
+Ensure `NEXT_PUBLIC_APP_URL` in `.env.local` matches your deployment:
+```
+NEXT_PUBLIC_APP_URL=https://voip-saas.vercel.app
 ```
 
 ### 7. Run Development Server

@@ -8,6 +8,10 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   try {
+    if (!process.env.NEXT_PUBLIC_APP_URL) {
+      throw new Error('NEXT_PUBLIC_APP_URL environment variable is not set')
+    }
+
     const twiml = new VoiceResponse()
 
     // Play hold music in a loop
@@ -17,7 +21,7 @@ export async function POST(request: Request) {
     }, 'http://com.twilio.sounds.music.s3.amazonaws.com/MARKOVICHAMP-Borghestral.mp3')
 
     // Fallback: redirect back to this endpoint to continue playing
-    twiml.redirect(`${process.env.NEXT_PUBLIC_APP_URL || 'https://8336d5b13c1c.ngrok-free.app'}/api/twilio/hold-music`)
+    twiml.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/api/twilio/hold-music`)
 
     return new NextResponse(twiml.toString(), {
       status: 200,
@@ -32,7 +36,10 @@ export async function POST(request: Request) {
     const twiml = new VoiceResponse()
     twiml.say('Please continue to hold.')
     twiml.pause({ length: 10 })
-    twiml.redirect(`${process.env.NEXT_PUBLIC_APP_URL || 'https://8336d5b13c1c.ngrok-free.app'}/api/twilio/hold-music`)
+
+    if (process.env.NEXT_PUBLIC_APP_URL) {
+      twiml.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/api/twilio/hold-music`)
+    }
 
     return new NextResponse(twiml.toString(), {
       status: 200,

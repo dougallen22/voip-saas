@@ -12,11 +12,15 @@ export async function POST(request: Request) {
       return new NextResponse('Missing conference name', { status: 400 })
     }
 
-    const holdMusicUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://8336d5b13c1c.ngrok-free.app'}/api/twilio/hold-music`
+    if (!process.env.NEXT_PUBLIC_APP_URL) {
+      return new NextResponse('NEXT_PUBLIC_APP_URL environment variable is not set', { status: 500 })
+    }
+
+    const holdMusicUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/twilio/hold-music`
 
     console.log('🎵 Generating park TwiML for conference:', conferenceName)
 
-    const statusCallbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://8336d5b13c1c.ngrok-free.app'}/api/twilio/parked-call-status`
+    const statusCallbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/twilio/parked-call-status`
 
     // Return TwiML that puts the call in a conference with hold music
     // action callback will fire when the Dial ends (caller hangs up from parking lot)

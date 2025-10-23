@@ -4,6 +4,7 @@ import Link from 'next/link'
 
 interface Contact {
   id: string
+  organization_id: string | null
   business_name: string | null
   first_name: string
   last_name: string
@@ -13,6 +14,8 @@ interface Contact {
   city: string | null
   state: string | null
   zip: string | null
+  created_at: string
+  updated_at: string
 }
 
 interface ContactCardProps {

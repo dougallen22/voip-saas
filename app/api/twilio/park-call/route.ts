@@ -67,8 +67,13 @@ export async function POST(request: Request) {
 
     // Create a unique conference name for this parked call
     const conferenceName = `park-${pstnCallSid}-${Date.now()}`
-    const holdMusicUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://8336d5b13c1c.ngrok-free.app'}/api/twilio/hold-music`
-    const parkTwimlUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://8336d5b13c1c.ngrok-free.app'}/api/twilio/park-twiml?conference=${encodeURIComponent(conferenceName)}`
+
+    if (!process.env.NEXT_PUBLIC_APP_URL) {
+      throw new Error('NEXT_PUBLIC_APP_URL environment variable is not set')
+    }
+
+    const holdMusicUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/twilio/hold-music`
+    const parkTwimlUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/twilio/park-twiml?conference=${encodeURIComponent(conferenceName)}`
 
     // Store in database FIRST before redirecting call
     // This ensures the INSERT event fires immediately and all UIs update

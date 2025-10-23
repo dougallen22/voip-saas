@@ -224,13 +224,13 @@ export default function ContactDetailsPage({ params }: { params: { id: string } 
             <IncomingCallCard callerNumber={incomingCall.parameters.From} />
             <div className="flex gap-3 mt-3">
               <button
-                onClick={() => acceptCall(incomingCall)}
+                onClick={() => acceptCall()}
                 className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
               >
                 Accept Call
               </button>
               <button
-                onClick={() => rejectCall(incomingCall)}
+                onClick={() => rejectCall()}
                 className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
               >
                 Decline
