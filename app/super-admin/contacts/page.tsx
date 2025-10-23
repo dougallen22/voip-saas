@@ -7,6 +7,7 @@ import ContactCard from '@/components/super-admin/contacts/ContactCard'
 import ContactFormModal from '@/components/super-admin/contacts/ContactFormModal'
 import { useTwilioDevice } from '@/hooks/useTwilioDevice'
 import IncomingCallCard from '@/components/super-admin/calling/IncomingCallCard'
+import ActiveCallBanner from '@/components/super-admin/calling/ActiveCallBanner'
 
 interface Contact {
   id: string
@@ -45,7 +46,8 @@ export default function ContactsPage() {
     currentUserId,
     makeOutboundCall,
     outboundCall,
-    outboundCallStatus
+    outboundCallStatus,
+    callStartTime
   } = useTwilioDevice()
 
   // Fetch user role
@@ -254,7 +256,7 @@ export default function ContactsPage() {
       <Navigation userRole={currentUserRole || undefined} />
 
       {/* Incoming Call Banner */}
-      {incomingCall && (
+      {incomingCall && !activeCall && (
         <div className="sticky top-16 z-30 backdrop-blur-sm bg-white/50 border-b border-orange-200">
           <div className="container mx-auto px-4 sm:px-6 py-4">
             <IncomingCallCard callerNumber={incomingCall.parameters.From} />
@@ -272,6 +274,23 @@ export default function ContactsPage() {
                 Decline
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Active Call Banner */}
+      {activeCall && (
+        <div className="sticky top-16 z-30 backdrop-blur-sm bg-white/50 border-b border-green-200">
+          <div className="container mx-auto px-4 sm:px-6 py-4">
+            <ActiveCallBanner
+              call={activeCall}
+              callStartTime={callStartTime}
+              onEndCall={() => {
+                if (activeCall) {
+                  activeCall.disconnect()
+                }
+              }}
+            />
           </div>
         </div>
       )}

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { TwilioDeviceProvider } from '@/lib/context/TwilioDeviceContext'
 
 export const metadata: Metadata = {
   title: 'VoIP CRM SaaS',
@@ -13,7 +14,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <TwilioDeviceProvider>
+          {children}
+        </TwilioDeviceProvider>
+      </body>
     </html>
   )
 }
