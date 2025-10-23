@@ -38,9 +38,11 @@ export default function ContactsPage() {
   // Twilio device for incoming calls and click-to-call
   const {
     incomingCall,
+    activeCall,
     acceptCall,
     rejectCall,
     device,
+    currentUserId,
     makeOutboundCall,
     outboundCall,
     outboundCallStatus
@@ -179,6 +181,68 @@ export default function ContactsPage() {
     }
   }
 
+  const handleAnswerCall = async () => {
+    console.log('🚀 handleAnswerCall CALLED', {
+      hasIncomingCall: !!incomingCall,
+      hasCurrentUserId: !!currentUserId,
+      currentUserId,
+      callSid: incomingCall?.parameters?.CallSid
+    })
+
+    if (!incomingCall || !currentUserId) {
+      console.log('❌ ABORT: Missing incomingCall or currentUserId')
+      return
+    }
+
+    console.log('📞 Attempting to answer call')
+
+    try {
+      // CRITICAL FIX: Accept call FIRST to establish audio
+      // This gives us access to the Call object with parentCallSid
+      console.log('🎧 Accepting call to establish audio connection')
+      await acceptCall()
+
+      console.log('📞 Call accepted, audio connected')
+
+      // Now check if we need to claim (in case another agent also answered)
+      // Use a small delay to let Twilio events propagate
+      setTimeout(async () => {
+        try {
+          const callSid = incomingCall.parameters.CallSid
+
+          console.log('🔄 Sending claim-call API request', { callSid, agentId: currentUserId })
+
+          const claimResponse = await fetch('/api/twilio/claim-call', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              callSid: callSid,
+              agentId: currentUserId
+            })
+          })
+
+          const claimResult = await claimResponse.json()
+          console.log('📥 claim-call API response', { status: claimResponse.status, result: claimResult })
+
+          if (!claimResult.success) {
+            console.log('⚠️ Another agent claimed - they will keep the call')
+            // Another agent claimed it, so disconnect our call
+            if (activeCall) {
+              activeCall.disconnect()
+            }
+          } else {
+            console.log('✅ Successfully claimed call')
+          }
+        } catch (error) {
+          console.error('❌ Error in post-answer claim:', error)
+        }
+      }, 100)
+
+    } catch (error) {
+      console.error('❌ Error answering call:', error)
+    }
+  }
+
   const handleModalSuccess = () => {
     // Contacts will update via realtime subscription
     fetchContacts() // Also fetch to ensure we have latest
@@ -196,7 +260,7 @@ export default function ContactsPage() {
             <IncomingCallCard callerNumber={incomingCall.parameters.From} />
             <div className="flex gap-3 mt-3">
               <button
-                onClick={() => acceptCall()}
+                onClick={handleAnswerCall}
                 className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
               >
                 Accept Call
