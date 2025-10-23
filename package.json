@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "clean": "rm -rf .next node_modules/.cache tsconfig.tsbuildinfo",
-    "fresh": "npm run clean && npm install && npm run dev"
+    "fresh": "npm run clean && npm install && npm run dev",
+    "cleanup-calls": "node scripts/cleanup-stale-calls.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
