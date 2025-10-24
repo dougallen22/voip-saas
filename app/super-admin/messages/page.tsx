@@ -139,6 +139,25 @@ export default function MessagesPage() {
     }
   }, [selectedConversationId, supabase])
 
+  // Realtime subscription for conversation list updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('sms-conversations-realtime')
+      .on('postgres_changes', {
+        event: '*', // Listen to INSERT, UPDATE, DELETE
+        schema: 'public',
+        table: 'sms_conversations'
+      }, () => {
+        // Refresh conversations list when any conversation changes
+        fetchConversations()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [supabase])
+
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp)
     const now = new Date()
