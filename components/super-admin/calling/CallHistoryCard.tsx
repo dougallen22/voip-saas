@@ -3,6 +3,13 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
+interface Contact {
+  id: string
+  first_name: string
+  last_name: string
+  business_name: string | null
+}
+
 interface CallRecord {
   id: string
   from_number: string
@@ -16,6 +23,7 @@ interface CallRecord {
   answered_by_user?: {
     full_name: string
   }
+  contact?: Contact
 }
 
 export default function CallHistoryCard() {
@@ -75,14 +83,60 @@ export default function CallHistoryCard() {
         answered_by_user: call.answered_by_user_id ? usersMap[call.answered_by_user_id] : undefined
       })) || []
 
-      console.log('📞 Fetched calls from last 7 days:', {
-        totalCalls: callsWithUsers.length,
-        answeredCalls: callsWithUsers.filter(c => c.answered_by_user_id).length,
-        missedCalls: callsWithUsers.filter(c => !c.answered_by_user_id && (c.status === 'ringing' || c.status === 'no-answer' || c.status === 'busy')).length,
-        usersFound: Object.keys(usersMap).length
+      // Fetch contacts for phone numbers
+      console.log('🔍 Fetching contact names for phone numbers...')
+      const { data: contacts } = await supabase
+        .from('contacts')
+        .select('id, phone, first_name, last_name, business_name')
+
+      // Create phone number to contact map
+      const contactsMap: Record<string, Contact> = {}
+      contacts?.forEach((contact: any) => {
+        if (contact.phone) {
+          // Normalize phone number for comparison (remove +1, spaces, dashes)
+          const normalizedPhone = contact.phone.replace(/[\s\-+]/g, '')
+          contactsMap[normalizedPhone] = {
+            id: contact.id,
+            first_name: contact.first_name,
+            last_name: contact.last_name,
+            business_name: contact.business_name
+          }
+        }
       })
 
-      setCalls(callsWithUsers)
+      // Attach contact info to each call
+      const callsWithContacts = callsWithUsers.map(call => {
+        // For inbound calls, check from_number
+        // For outbound calls, check to_number
+        const phoneToCheck = call.direction === 'inbound' ? call.from_number : call.to_number
+        const normalizedPhone = phoneToCheck.replace(/[\s\-+]/g, '')
+
+        // Try different normalizations
+        let contact = contactsMap[normalizedPhone]
+        if (!contact && normalizedPhone.startsWith('1') && normalizedPhone.length === 11) {
+          // Try without leading 1
+          contact = contactsMap[normalizedPhone.slice(1)]
+        }
+        if (!contact && normalizedPhone.length === 10) {
+          // Try with leading 1
+          contact = contactsMap['1' + normalizedPhone]
+        }
+
+        return {
+          ...call,
+          contact
+        }
+      })
+
+      console.log('📞 Fetched calls from last 7 days:', {
+        totalCalls: callsWithContacts.length,
+        answeredCalls: callsWithContacts.filter(c => c.answered_by_user_id).length,
+        missedCalls: callsWithContacts.filter(c => !c.answered_by_user_id && (c.status === 'ringing' || c.status === 'no-answer' || c.status === 'busy')).length,
+        usersFound: Object.keys(usersMap).length,
+        contactsFound: callsWithContacts.filter(c => c.contact).length
+      })
+
+      setCalls(callsWithContacts)
     } catch (error) {
       console.error('Error fetching call history:', error)
     } finally {
@@ -241,9 +295,22 @@ export default function CallHistoryCard() {
                     {/* Call Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono font-bold text-sm text-slate-900">
-                          {formatPhoneNumber(call.from_number)}
-                        </span>
+                        <div className="flex flex-col">
+                          {call.contact ? (
+                            <>
+                              <span className="font-bold text-sm text-slate-900">
+                                {call.contact.business_name || `${call.contact.first_name} ${call.contact.last_name}`}
+                              </span>
+                              <span className="font-mono text-xs text-slate-500">
+                                {formatPhoneNumber(call.direction === 'inbound' ? call.from_number : call.to_number)}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="font-mono font-bold text-sm text-slate-900">
+                              {formatPhoneNumber(call.direction === 'inbound' ? call.from_number : call.to_number)}
+                            </span>
+                          )}
+                        </div>
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${status.color}`}>
                           <span>{status.icon}</span>
                           {status.label}
