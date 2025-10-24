@@ -317,8 +317,8 @@ export default function CallHistoryCard() {
                         </span>
                       </div>
 
-                      {/* Answered By */}
-                      {call.answered_by_user_id && (
+                      {/* Answered By / Called By */}
+                      {call.answered_by_user_id && call.direction === 'inbound' && (
                         <div className="flex items-center gap-1.5 mb-1">
                           <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
                             <span className="text-white text-[10px] font-bold">
@@ -329,6 +329,22 @@ export default function CallHistoryCard() {
                           </div>
                           <span className="text-xs text-slate-600">
                             Answered by <span className="font-bold text-blue-700">
+                              {call.answered_by_user?.full_name || 'Agent'}
+                            </span>
+                          </span>
+                        </div>
+                      )}
+                      {call.answered_by_user_id && call.direction === 'outbound' && (
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-sm">
+                            <span className="text-white text-[10px] font-bold">
+                              {call.answered_by_user?.full_name
+                                ? call.answered_by_user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+                                : '?'}
+                            </span>
+                          </div>
+                          <span className="text-xs text-slate-600">
+                            Called by <span className="font-bold text-amber-700">
                               {call.answered_by_user?.full_name || 'Agent'}
                             </span>
                           </span>
