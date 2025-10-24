@@ -10,6 +10,9 @@ const VoiceResponse = twilio.twiml.VoiceResponse
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
+  console.log('🚀🚀🚀 OUTBOUND ROUTE CALLED!!! 🚀🚀🚀')
+  console.log('Timestamp:', new Date().toISOString())
+
   try {
     const formData = await request.formData()
     const callSid = formData.get('CallSid') as string
@@ -99,38 +102,58 @@ export async function POST(request: Request) {
 
     if (callError) {
       console.error('❌ Failed to create call record:', callError)
+      console.error('❌ CALL RECORD ERROR - NOT INCREMENTING COUNTER')
     } else {
       console.log('✅ Call record created:', callRecord?.id)
+      console.log('🔢 NOW ATTEMPTING TO INCREMENT OUTBOUND COUNTER...')
 
       // Increment outbound call counts for the agent (daily, weekly, monthly, yearly)
       try {
-        console.log('📊 Incrementing outbound call counts for agent:', from)
+        console.log('📊 Step 1: Fetching current counts for agent:', from)
 
         // First, get current counts
-        const { data: currentUser } = await adminClient
+        const { data: currentUser, error: fetchError } = await adminClient
           .from('voip_users')
           .select('today_outbound_calls, weekly_outbound_calls, monthly_outbound_calls, yearly_outbound_calls')
           .eq('id', from)
           .single()
 
+        if (fetchError) {
+          console.error('❌ Failed to fetch current user counts:', fetchError)
+          throw fetchError
+        }
+
+        console.log('📊 Step 2: Current counts:', {
+          today: currentUser?.today_outbound_calls || 0,
+          weekly: currentUser?.weekly_outbound_calls || 0,
+          monthly: currentUser?.monthly_outbound_calls || 0,
+          yearly: currentUser?.yearly_outbound_calls || 0
+        })
+
+        const newCounts = {
+          today_outbound_calls: (currentUser?.today_outbound_calls || 0) + 1,
+          weekly_outbound_calls: (currentUser?.weekly_outbound_calls || 0) + 1,
+          monthly_outbound_calls: (currentUser?.monthly_outbound_calls || 0) + 1,
+          yearly_outbound_calls: (currentUser?.yearly_outbound_calls || 0) + 1
+        }
+
+        console.log('📊 Step 3: New counts to set:', newCounts)
+
         // Increment all outbound counters
         const { error: updateError } = await adminClient
           .from('voip_users')
-          .update({
-            today_outbound_calls: (currentUser?.today_outbound_calls || 0) + 1,
-            weekly_outbound_calls: (currentUser?.weekly_outbound_calls || 0) + 1,
-            monthly_outbound_calls: (currentUser?.monthly_outbound_calls || 0) + 1,
-            yearly_outbound_calls: (currentUser?.yearly_outbound_calls || 0) + 1
-          })
+          .update(newCounts)
           .eq('id', from)
 
         if (updateError) {
-          console.error('⚠️ Failed to increment outbound call counts:', updateError)
+          console.error('❌ Failed to increment outbound call counts:', updateError)
+          console.error('❌ Update error details:', JSON.stringify(updateError, null, 2))
         } else {
-          console.log('✅ Incremented outbound call counts (daily/weekly/monthly/yearly) for agent:', from)
+          console.log('✅✅✅ SUCCESS! Incremented outbound call counts for agent:', from)
+          console.log('✅ New counts:', newCounts)
         }
       } catch (countError) {
-        console.error('⚠️ Error in count increment:', countError)
+        console.error('❌❌❌ EXCEPTION in count increment:', countError)
         // Don't fail the request if count increment fails
       }
     }
