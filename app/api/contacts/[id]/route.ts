@@ -43,22 +43,59 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized to view this contact' }, { status: 403 })
     }
 
-    // Fetch call history for this contact
-    const { data: callHistory, error: callHistoryError } = await supabase
+    // Normalize phone number for matching (remove +1, spaces, dashes)
+    const normalizedPhone = contact.phone.replace(/[\s\-+]/g, '')
+
+    console.log('📞 Fetching history for contact:', contact.id, 'Phone:', contact.phone, 'Normalized:', normalizedPhone)
+
+    // Fetch all calls for this organization
+    const { data: allCalls, error: callsError } = await supabase
       .from('calls')
       .select('*')
       .eq('organization_id', voipUser.organization_id)
-      .or(`from_number.eq.${contact.phone},to_number.eq.${contact.phone}`)
       .order('created_at', { ascending: false })
-      .limit(20)
+      .limit(200) // Get more to filter
 
-    if (callHistoryError) {
-      console.error('Error fetching call history:', callHistoryError)
+    if (callsError) {
+      console.error('Error fetching calls:', callsError)
     }
+
+    // Filter calls by matching phone numbers with normalization
+    const callHistory = allCalls?.filter(call => {
+      const normalizedFrom = call.from_number?.replace(/[\s\-+]/g, '') || ''
+      const normalizedTo = call.to_number?.replace(/[\s\-+]/g, '') || ''
+
+      // Try matching with and without leading 1
+      const matchFrom = normalizedFrom === normalizedPhone ||
+                       normalizedFrom === '1' + normalizedPhone ||
+                       normalizedFrom.slice(1) === normalizedPhone
+      const matchTo = normalizedTo === normalizedPhone ||
+                     normalizedTo === '1' + normalizedPhone ||
+                     normalizedTo.slice(1) === normalizedPhone
+
+      return matchFrom || matchTo
+    }).slice(0, 20) || []
+
+    console.log('📞 Found', callHistory.length, 'calls')
+
+    // Fetch SMS messages for this contact
+    const { data: smsMessages, error: smsError } = await supabase
+      .from('sms_messages')
+      .select('*')
+      .eq('conversation_id', contact.phone)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (smsError) {
+      console.error('Error fetching SMS messages:', smsError)
+    }
+
+    console.log('📱 Found', smsMessages?.length || 0, 'SMS messages')
 
     return NextResponse.json({
       contact,
-      callHistory: callHistory || []
+      callHistory: callHistory || [],
+      smsHistory: smsMessages || []
     })
 
   } catch (error: any) {

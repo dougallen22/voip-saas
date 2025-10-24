@@ -37,10 +37,29 @@ interface Call {
   created_at: string
 }
 
+interface SMSMessage {
+  id: string
+  conversation_id: string
+  from_number: string
+  to_number: string
+  message_body: string
+  direction: 'inbound' | 'outbound'
+  status: string
+  created_at: string
+}
+
+interface HistoryItem {
+  type: 'call' | 'sms'
+  data: Call | SMSMessage
+  timestamp: string
+}
+
 export default function ContactDetailsPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const [contact, setContact] = useState<Contact | null>(null)
   const [callHistory, setCallHistory] = useState<Call[]>([])
+  const [smsHistory, setSmsHistory] = useState<SMSMessage[]>([])
+  const [unifiedHistory, setUnifiedHistory] = useState<HistoryItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
@@ -100,6 +119,28 @@ export default function ContactDetailsPage({ params }: { params: { id: string } 
 
         setContact(data.contact)
         setCallHistory(data.callHistory || [])
+        setSmsHistory(data.smsHistory || [])
+
+        // Create unified history timeline
+        const callItems: HistoryItem[] = (data.callHistory || []).map((call: Call) => ({
+          type: 'call' as const,
+          data: call,
+          timestamp: call.created_at
+        }))
+
+        const smsItems: HistoryItem[] = (data.smsHistory || []).map((sms: SMSMessage) => ({
+          type: 'sms' as const,
+          data: sms,
+          timestamp: sms.created_at
+        }))
+
+        // Combine and sort by timestamp (newest first)
+        const combined = [...callItems, ...smsItems].sort((a, b) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        )
+
+        setUnifiedHistory(combined)
+        console.log('📊 Unified history:', combined.length, 'items (', callItems.length, 'calls,', smsItems.length, 'SMS)')
       } catch (err: any) {
         console.error('Error fetching contact:', err)
         setError('An error occurred while loading the contact')
@@ -424,46 +465,91 @@ export default function ContactDetailsPage({ params }: { params: { id: string } 
           </div>
         </div>
 
-        {/* Call History */}
+        {/* Communication History (Calls + SMS) */}
         <div className="backdrop-blur-lg bg-white/70 rounded-xl shadow-lg border border-white/20 p-6 sm:p-8">
-          <h2 className="text-xl font-bold text-slate-900 mb-6">Call History</h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-slate-900">Communication History</h2>
+            <div className="flex gap-2 text-sm">
+              <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
+                {callHistory.length} calls
+              </span>
+              <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-medium">
+                {smsHistory.length} texts
+              </span>
+            </div>
+          </div>
 
-          {callHistory.length === 0 ? (
-            <p className="text-slate-600 text-center py-8">No call history with this contact</p>
+          {unifiedHistory.length === 0 ? (
+            <p className="text-slate-600 text-center py-8">No communication history with this contact</p>
           ) : (
             <div className="space-y-3">
-              {callHistory.map((call) => {
-                const isInbound = call.to_number === contact.phone
-                return (
-                  <div
-                    key={call.id}
-                    className="flex items-center justify-between p-4 bg-white/50 rounded-lg border border-slate-200 hover:border-blue-300 transition-all"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        isInbound ? 'bg-green-100' : 'bg-blue-100'
-                      }`}>
-                        <svg className={`w-5 h-5 ${isInbound ? 'text-green-600' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isInbound ? "M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" : "M16 3h5m0 0v5m0-5l-6 6M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"} />
-                        </svg>
+              {unifiedHistory.map((item) => {
+                if (item.type === 'call') {
+                  const call = item.data as Call
+                  const isInbound = call.to_number !== contact.phone
+                  return (
+                    <div
+                      key={call.id}
+                      className="flex items-center justify-between p-4 bg-white/50 rounded-lg border border-slate-200 hover:border-blue-300 transition-all"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                          isInbound ? 'bg-green-100' : 'bg-blue-100'
+                        }`}>
+                          <svg className={`w-5 h-5 ${isInbound ? 'text-green-600' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-slate-900">
+                              {isInbound ? 'Inbound Call' : 'Outbound Call'}
+                            </p>
+                            <span className="text-xs text-slate-500">📞</span>
+                          </div>
+                          <p className="text-sm text-slate-600">{formatDate(call.created_at)}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-semibold text-slate-900">
-                          {isInbound ? 'Outbound Call' : 'Inbound Call'}
+                      <div className="text-right">
+                        <p className="font-medium text-slate-900">{formatDuration(call.duration)}</p>
+                        <p className={`text-sm font-medium ${
+                          call.status === 'completed' ? 'text-green-600' : 'text-slate-500'
+                        }`}>
+                          {call.status}
                         </p>
-                        <p className="text-sm text-slate-600">{formatDate(call.started_at)}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-medium text-slate-900">{formatDuration(call.duration)}</p>
-                      <p className={`text-sm font-medium ${
-                        call.status === 'completed' ? 'text-green-600' : 'text-slate-500'
+                  )
+                } else {
+                  const sms = item.data as SMSMessage
+                  const isInbound = sms.direction === 'inbound'
+                  return (
+                    <div
+                      key={sms.id}
+                      className="flex items-start gap-4 p-4 bg-white/50 rounded-lg border border-slate-200 hover:border-purple-300 transition-all"
+                    >
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        isInbound ? 'bg-purple-100' : 'bg-indigo-100'
                       }`}>
-                        {call.status}
-                      </p>
+                        <span className="text-lg">
+                          {isInbound ? '📨' : '📤'}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-semibold text-slate-900">
+                            {isInbound ? 'Received Text' : 'Sent Text'}
+                          </p>
+                          <span className="text-xs text-slate-500">💬</span>
+                        </div>
+                        <p className="text-sm text-slate-600 mb-2">{formatDate(sms.created_at)}</p>
+                        <p className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3 border border-slate-100">
+                          {sms.message_body}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )
+                  )
+                }
               })}
             </div>
           )}
