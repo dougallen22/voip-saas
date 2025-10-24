@@ -3,6 +3,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Navigation from '@/components/super-admin/Navigation'
+import { useTwilioDevice } from '@/hooks/useTwilioDevice'
+import IncomingCallCard from '@/components/super-admin/calling/IncomingCallCard'
+import ActiveCallBanner from '@/components/super-admin/calling/ActiveCallBanner'
 
 interface Conversation {
   id: string
@@ -41,6 +44,19 @@ export default function MessagesPage() {
   const [isSending, setIsSending] = useState(false)
 
   const supabase = useMemo(() => createClient(), [])
+
+  // Twilio device for incoming calls
+  const {
+    incomingCall,
+    activeCall,
+    acceptCall,
+    rejectCall,
+    device,
+    currentUserId,
+    callStartTime,
+    incomingCallContact,
+    activeCallContact
+  } = useTwilioDevice()
 
   // Fetch conversations
   const fetchConversations = async () => {
@@ -149,6 +165,69 @@ export default function MessagesPage() {
     }
   }
 
+  // Handle answer incoming call
+  const handleAnswerCall = async () => {
+    console.log('🚀 handleAnswerCall CALLED', {
+      hasIncomingCall: !!incomingCall,
+      hasCurrentUserId: !!currentUserId,
+      currentUserId,
+      callSid: incomingCall?.parameters?.CallSid
+    })
+
+    if (!incomingCall || !currentUserId) {
+      console.log('❌ ABORT: Missing incomingCall or currentUserId')
+      return
+    }
+
+    console.log('📞 Attempting to answer call')
+
+    try {
+      // CRITICAL FIX: Accept call FIRST to establish audio
+      // This gives us access to the Call object with parentCallSid
+      console.log('🎧 Accepting call to establish audio connection')
+      await acceptCall()
+
+      console.log('📞 Call accepted, audio connected')
+
+      // Now check if we need to claim (in case another agent also answered)
+      // Use a small delay to let Twilio events propagate
+      setTimeout(async () => {
+        try {
+          const callSid = incomingCall.parameters.CallSid
+
+          console.log('🔄 Sending claim-call API request', { callSid, agentId: currentUserId })
+
+          const claimResponse = await fetch('/api/twilio/claim-call', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              call_sid: callSid,
+              agent_id: currentUserId
+            })
+          })
+
+          const claimData = await claimResponse.json()
+          console.log('🔄 Claim API response:', claimData)
+
+          if (!claimResponse.ok) {
+            console.error('⚠️ Failed to claim call (but audio already connected):', claimData.error)
+          } else {
+            console.log('✅ Successfully claimed call')
+          }
+
+        } catch (claimError) {
+          console.error('❌ Error in claim-call API:', claimError)
+        }
+      }, 500) // Small delay for Twilio events to propagate
+
+    } catch (error) {
+      console.error('❌ Error accepting call:', error)
+      alert('Failed to accept call. Please try again.')
+    }
+  }
+
   // Initial load
   useEffect(() => {
     fetchConversations()
@@ -222,6 +301,48 @@ export default function MessagesPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <Navigation />
+
+      {/* Incoming Call Banner */}
+      {incomingCall && !activeCall && (
+        <div className="sticky top-16 z-30 backdrop-blur-sm bg-white/50 border-b border-orange-200">
+          <div className="container mx-auto px-4 sm:px-6 py-4">
+            <IncomingCallCard
+              callerNumber={incomingCall.parameters.From}
+              contactName={incomingCallContact?.displayName}
+            />
+            <div className="flex gap-3 mt-3">
+              <button
+                onClick={handleAnswerCall}
+                className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
+              >
+                Accept Call
+              </button>
+              <button
+                onClick={() => rejectCall()}
+                className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
+              >
+                Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Active Call Banner */}
+      {activeCall && (
+        <div className="sticky top-16 z-30">
+          <ActiveCallBanner
+            call={activeCall}
+            callStartTime={callStartTime}
+            contactName={activeCallContact?.displayName}
+            onEndCall={() => {
+              if (activeCall) {
+                activeCall.disconnect()
+              }
+            }}
+          />
+        </div>
+      )}
 
       <div className="container mx-auto px-4 py-6">
         <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-blue-900 bg-clip-text text-transparent mb-6">
