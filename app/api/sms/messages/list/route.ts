@@ -51,7 +51,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     }
 
-    // Get messages with sender info (for outbound messages)
+    // Get messages (without join - more reliable)
     const { data: messages, error: messagesError } = await supabase
       .from('sms_messages')
       .select(`
@@ -72,11 +72,7 @@ export async function GET(request: Request) {
         sent_at,
         delivered_at,
         read_at,
-        created_at,
-        voip_users (
-          id,
-          full_name
-        )
+        created_at
       `)
       .eq('conversation_id', conversation_id)
       .order('created_at', { ascending: true })
@@ -90,7 +86,7 @@ export async function GET(request: Request) {
       )
     }
 
-    // Format response
+    // Format response (simplified - no sender info for now)
     const formattedMessages = (messages || []).map((msg: any) => ({
       id: msg.id,
       conversation_id: msg.conversation_id,
@@ -109,10 +105,7 @@ export async function GET(request: Request) {
       delivered_at: msg.delivered_at,
       read_at: msg.read_at,
       created_at: msg.created_at,
-      sender: msg.voip_users ? {
-        id: msg.voip_users.id,
-        full_name: msg.voip_users.full_name
-      } : null
+      sender: null // Simplified - can add later if needed
     }))
 
     return NextResponse.json({
