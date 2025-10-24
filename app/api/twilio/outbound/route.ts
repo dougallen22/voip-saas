@@ -101,6 +101,31 @@ export async function POST(request: Request) {
       console.error('❌ Failed to create call record:', callError)
     } else {
       console.log('✅ Call record created:', callRecord?.id)
+
+      // Increment outbound call counts for the agent (daily, weekly, monthly, yearly)
+      try {
+        console.log('📊 Incrementing outbound call counts for agent:', from)
+
+        // First, reset counts if period has changed (day/week/month/year)
+        await adminClient.rpc('reset_call_counts')
+
+        // Increment all outbound counters (daily, weekly, monthly, yearly)
+        await adminClient.rpc('exec_sql', {
+          sql: `
+            UPDATE public.voip_users
+            SET
+              today_outbound_calls = COALESCE(today_outbound_calls, 0) + 1,
+              weekly_outbound_calls = COALESCE(weekly_outbound_calls, 0) + 1,
+              monthly_outbound_calls = COALESCE(monthly_outbound_calls, 0) + 1,
+              yearly_outbound_calls = COALESCE(yearly_outbound_calls, 0) + 1
+            WHERE id = '${from}'
+          `
+        })
+        console.log('✅ Incremented outbound call counts (daily/weekly/monthly/yearly) for agent:', from)
+      } catch (countError) {
+        console.error('⚠️ Failed to increment outbound call counts:', countError)
+        // Don't fail the request if count increment fails
+      }
     }
 
     // Update agent's current_call_id to mark them as on a call
