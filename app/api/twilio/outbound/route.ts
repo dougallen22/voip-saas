@@ -18,7 +18,10 @@ export async function POST(request: Request) {
     const callSid = formData.get('CallSid') as string
     const to = formData.get('To') as string
     const contactName = formData.get('contactName') as string
-    const from = formData.get('From') as string // This is the agent's user ID (identity)
+    const fromRaw = formData.get('From') as string // This is the agent's user ID (identity)
+
+    // Remove "client:" prefix if present (Twilio adds this to the identity)
+    const from = fromRaw?.replace(/^client:/, '') || fromRaw
 
     console.log('=== OUTBOUND CALL REQUEST ===')
     console.log('CallSid:', callSid)
