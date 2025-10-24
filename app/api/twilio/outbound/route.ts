@@ -25,7 +25,22 @@ export async function POST(request: Request) {
     console.log('To:', to)
     console.log('Contact Name:', contactName)
     console.log('Agent ID (From):', from)
+    console.log('From type:', typeof from)
+    console.log('From length:', from?.length)
     console.log('============================')
+
+    // Validate From parameter (agent's user ID)
+    if (!from) {
+      console.error('❌ No From parameter provided - Twilio identity missing!')
+      console.error('   This usually means the TwiML App is not configured correctly')
+      console.error('   or the Twilio Device identity was not set properly')
+      const twiml = new VoiceResponse()
+      twiml.say('Unable to identify calling agent. Please refresh and try again.')
+      return new NextResponse(twiml.toString(), {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml' }
+      })
+    }
 
     if (!to) {
       console.error('❌ No destination phone number provided')
@@ -69,14 +84,38 @@ export async function POST(request: Request) {
     )
 
     // Get agent's organization ID
-    const { data: agent } = await adminClient
+    console.log('🔍 Looking up agent in voip_users table...')
+    const { data: agent, error: agentError } = await adminClient
       .from('voip_users')
       .select('organization_id')
       .eq('id', from)
       .single()
 
+    if (agentError) {
+      console.error('❌ Error looking up agent:', agentError.message)
+      console.error('   Agent ID:', from)
+      console.error('   This means the From parameter is not a valid voip_users.id')
+      console.error('   Possible causes:')
+      console.error('   1. User is not logged in properly')
+      console.error('   2. User does not exist in voip_users table')
+      console.error('   3. Twilio identity does not match voip_users.id')
+    }
+
+    if (!agent) {
+      console.error('❌ Agent not found in voip_users table!')
+      console.error('   Attempted lookup with ID:', from)
+      const twiml = new VoiceResponse()
+      twiml.say('Unable to verify calling agent. Please ensure you are logged in and try again.')
+      return new NextResponse(twiml.toString(), {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml' }
+      })
+    }
+
+    console.log('✅ Agent found! Organization ID:', agent.organization_id)
+
     // Use agent's org ID, or fallback to default organization
-    const organizationId = agent?.organization_id || '9abcaa0f-5e39-41f5-b269-2b5872720768'
+    const organizationId = agent.organization_id || '9abcaa0f-5e39-41f5-b269-2b5872720768'
 
     console.log('📊 Using organization_id:', organizationId)
 
@@ -101,8 +140,31 @@ export async function POST(request: Request) {
       .single()
 
     if (callError) {
-      console.error('❌ Failed to create call record:', callError)
+      console.error('❌ Failed to create call record!')
+      console.error('   Error code:', callError.code)
+      console.error('   Error message:', callError.message)
+      console.error('   Error details:', callError.details)
+      console.error('   Values used:')
+      console.error('     organization_id:', organizationId)
+      console.error('     answered_by_user_id:', from)
+      console.error('     assigned_to:', from)
+      console.error('     from_number:', process.env.TWILIO_PHONE_NUMBER)
+      console.error('     to_number:', formattedTo)
+      console.error('     twilio_call_sid:', callSid)
       console.error('❌ CALL RECORD ERROR - NOT INCREMENTING COUNTER')
+
+      // Still return TwiML to attempt the call even if database insert fails
+      const twiml = new VoiceResponse()
+      const dial = twiml.dial({
+        callerId: process.env.TWILIO_PHONE_NUMBER || undefined,
+        timeout: 30,
+      })
+      dial.number(formattedTo)
+
+      return new NextResponse(twiml.toString(), {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml' },
+      })
     } else {
       console.log('✅ Call record created:', callRecord?.id)
       console.log('🔢 NOW ATTEMPTING TO INCREMENT OUTBOUND COUNTER...')
