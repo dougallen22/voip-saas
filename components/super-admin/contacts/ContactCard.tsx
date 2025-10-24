@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 interface Contact {
   id: string
@@ -26,6 +26,7 @@ interface ContactCardProps {
 }
 
 export default function ContactCard({ contact, onEdit, onDelete, onCall }: ContactCardProps) {
+  const router = useRouter()
   const fullName = `${contact.first_name} ${contact.last_name}`
   const displayName = contact.business_name || fullName
 
@@ -69,25 +70,28 @@ export default function ContactCard({ contact, onEdit, onDelete, onCall }: Conta
     onCall(contact.phone, fullName)
   }
 
+  const handleCardClick = () => {
+    router.push(`/super-admin/contacts/${contact.id}`)
+  }
+
   return (
-    <div className="backdrop-blur-md bg-white/80 rounded-xl shadow-md p-4 border border-white/20 shadow-slate-900/5 transition-all hover:shadow-lg">
+    <div
+      onClick={handleCardClick}
+      className="backdrop-blur-md bg-white/80 rounded-xl shadow-md p-4 border border-white/20 shadow-slate-900/5 transition-all hover:shadow-lg cursor-pointer"
+    >
       {/* Main horizontal layout */}
       <div className="flex items-center gap-4">
         {/* Avatar */}
-        <Link href={`/super-admin/contacts/${contact.id}`} className="flex-shrink-0">
-          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-md ring-2 ring-slate-200 ring-offset-2 hover:ring-blue-400 transition-all cursor-pointer">
-            {getInitials(displayName)}
-          </div>
-        </Link>
+        <div className="flex-shrink-0 w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-md ring-2 ring-slate-200 ring-offset-2 transition-all">
+          {getInitials(displayName)}
+        </div>
 
         {/* Contact info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <Link href={`/super-admin/contacts/${contact.id}`}>
-              <h3 className="font-bold text-sm text-slate-900 truncate hover:text-blue-600 transition-colors cursor-pointer">
-                {displayName}
-              </h3>
-            </Link>
+            <h3 className="font-bold text-sm text-slate-900 truncate">
+              {displayName}
+            </h3>
             {contact.business_name && (
               <span className="inline-flex items-center bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-xs font-semibold">
                 {fullName}
