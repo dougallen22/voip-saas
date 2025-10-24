@@ -106,24 +106,31 @@ export async function POST(request: Request) {
       try {
         console.log('📊 Incrementing outbound call counts for agent:', from)
 
-        // First, reset counts if period has changed (day/week/month/year)
-        await adminClient.rpc('reset_call_counts')
+        // First, get current counts
+        const { data: currentUser } = await adminClient
+          .from('voip_users')
+          .select('today_outbound_calls, weekly_outbound_calls, monthly_outbound_calls, yearly_outbound_calls')
+          .eq('id', from)
+          .single()
 
-        // Increment all outbound counters (daily, weekly, monthly, yearly)
-        await adminClient.rpc('exec_sql', {
-          sql: `
-            UPDATE public.voip_users
-            SET
-              today_outbound_calls = COALESCE(today_outbound_calls, 0) + 1,
-              weekly_outbound_calls = COALESCE(weekly_outbound_calls, 0) + 1,
-              monthly_outbound_calls = COALESCE(monthly_outbound_calls, 0) + 1,
-              yearly_outbound_calls = COALESCE(yearly_outbound_calls, 0) + 1
-            WHERE id = '${from}'
-          `
-        })
-        console.log('✅ Incremented outbound call counts (daily/weekly/monthly/yearly) for agent:', from)
+        // Increment all outbound counters
+        const { error: updateError } = await adminClient
+          .from('voip_users')
+          .update({
+            today_outbound_calls: (currentUser?.today_outbound_calls || 0) + 1,
+            weekly_outbound_calls: (currentUser?.weekly_outbound_calls || 0) + 1,
+            monthly_outbound_calls: (currentUser?.monthly_outbound_calls || 0) + 1,
+            yearly_outbound_calls: (currentUser?.yearly_outbound_calls || 0) + 1
+          })
+          .eq('id', from)
+
+        if (updateError) {
+          console.error('⚠️ Failed to increment outbound call counts:', updateError)
+        } else {
+          console.log('✅ Incremented outbound call counts (daily/weekly/monthly/yearly) for agent:', from)
+        }
       } catch (countError) {
-        console.error('⚠️ Failed to increment outbound call counts:', countError)
+        console.error('⚠️ Error in count increment:', countError)
         // Don't fail the request if count increment fails
       }
     }
