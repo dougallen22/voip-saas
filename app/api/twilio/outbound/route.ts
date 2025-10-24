@@ -128,20 +128,22 @@ export async function POST(request: Request) {
     console.log('📊 Using organization_id:', organizationId)
 
     // Create call record in database
+    // Only set answered_by_user_id if agent was found (to avoid foreign key errors)
     const { data: callRecord, error: callError } = await adminClient
       .from('calls')
       .insert({
         organization_id: organizationId,
         from_number: process.env.TWILIO_PHONE_NUMBER || 'Unknown',
         to_number: formattedTo,
-        answered_by_user_id: from, // The agent making the call
-        assigned_to: from, // For compatibility with existing schema
+        answered_by_user_id: agent ? from : null, // Only set if agent exists
+        assigned_to: agent ? from : null, // Only set if agent exists
         status: 'ringing',
         direction: 'outbound',
         twilio_call_sid: callSid,
         metadata: {
           contactName: contactName || 'Unknown',
-          initiatedBy: from
+          initiatedBy: from,
+          fromParameter: from // Store the original From parameter for debugging
         }
       })
       .select()
@@ -175,11 +177,16 @@ export async function POST(request: Request) {
       })
     } else {
       console.log('✅ Call record created:', callRecord?.id)
-      console.log('🔢 NOW ATTEMPTING TO INCREMENT OUTBOUND COUNTER...')
 
-      // Increment outbound call counts for the agent (daily, weekly, monthly, yearly)
-      try {
-        console.log('📊 Step 1: Fetching current counts for agent:', from)
+      // Only increment counters if agent was found
+      if (!agent) {
+        console.log('⚠️ Skipping counter increment - agent not found in voip_users')
+      } else {
+        console.log('🔢 NOW ATTEMPTING TO INCREMENT OUTBOUND COUNTER...')
+
+        // Increment outbound call counts for the agent (daily, weekly, monthly, yearly)
+        try {
+          console.log('📊 Step 1: Fetching current counts for agent:', from)
 
         // First, get current counts
         const { data: currentUser, error: fetchError } = await adminClient
@@ -222,26 +229,31 @@ export async function POST(request: Request) {
           console.log('✅✅✅ SUCCESS! Incremented outbound call counts for agent:', from)
           console.log('✅ New counts:', newCounts)
         }
-      } catch (countError) {
-        console.error('❌❌❌ EXCEPTION in count increment:', countError)
-        // Don't fail the request if count increment fails
+        } catch (countError) {
+          console.error('❌❌❌ EXCEPTION in count increment:', countError)
+          // Don't fail the request if count increment fails
+        }
       }
     }
 
-    // Update agent's current_call_id to mark them as on a call
-    const { error: updateError } = await adminClient
-      .from('voip_users')
-      .update({
-        current_call_id: callRecord?.id || null,
-        current_call_phone_number: formattedTo,
-        is_available: false
-      })
-      .eq('id', from)
+    // Update agent's current_call_id to mark them as on a call (only if agent exists)
+    if (agent) {
+      const { error: updateError } = await adminClient
+        .from('voip_users')
+        .update({
+          current_call_id: callRecord?.id || null,
+          current_call_phone_number: formattedTo,
+          is_available: false
+        })
+        .eq('id', from)
 
-    if (updateError) {
-      console.error('❌ Failed to update agent call status:', updateError)
+      if (updateError) {
+        console.error('❌ Failed to update agent call status:', updateError)
+      } else {
+        console.log('✅ Agent marked as on call')
+      }
     } else {
-      console.log('✅ Agent marked as on call')
+      console.log('⚠️ Skipping agent status update - agent not found')
     }
 
     // Generate TwiML to dial the number
