@@ -90,6 +90,29 @@ export default function MessagesPage() {
     }
   }
 
+  // Mark conversation as read
+  const markAsRead = async (conversationId: string) => {
+    try {
+      console.log('Marking conversation as read:', conversationId)
+      const response = await fetch('/api/sms/messages/mark-read', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ conversation_id: conversationId })
+      })
+
+      if (response.ok) {
+        console.log('Successfully marked as read')
+      } else {
+        const error = await response.json()
+        console.error('Failed to mark as read:', error)
+      }
+    } catch (error) {
+      console.error('Error marking as read:', error)
+    }
+  }
+
   // Send message
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedConversationId) return
@@ -135,6 +158,10 @@ export default function MessagesPage() {
   useEffect(() => {
     if (selectedConversationId) {
       fetchMessages(selectedConversationId)
+      // Mark as read after a short delay to ensure messages are loaded
+      setTimeout(() => {
+        markAsRead(selectedConversationId)
+      }, 500)
     }
   }, [selectedConversationId])
 
