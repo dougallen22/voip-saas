@@ -59,7 +59,9 @@ export default function ContactDetailsPage({ params }: { params: { id: string } 
     makeOutboundCall,
     outboundCall,
     outboundCallStatus,
-    callStartTime
+    callStartTime,
+    incomingCallContact,
+    activeCallContact
   } = useTwilioDevice()
 
   // Fetch user role
@@ -287,7 +289,10 @@ export default function ContactDetailsPage({ params }: { params: { id: string } 
       {incomingCall && !activeCall && (
         <div className="sticky top-16 z-30 backdrop-blur-sm bg-white/50 border-b border-orange-200">
           <div className="container mx-auto px-4 sm:px-6 py-4">
-            <IncomingCallCard callerNumber={incomingCall.parameters.From} />
+            <IncomingCallCard
+              callerNumber={incomingCall.parameters.From}
+              contactName={incomingCallContact?.displayName}
+            />
             <div className="flex gap-3 mt-3">
               <button
                 onClick={handleAnswerCall}
@@ -313,6 +318,7 @@ export default function ContactDetailsPage({ params }: { params: { id: string } 
             <ActiveCallBanner
               call={activeCall}
               callStartTime={callStartTime}
+              contactName={activeCallContact?.displayName}
               onEndCall={() => {
                 if (activeCall) {
                   activeCall.disconnect()

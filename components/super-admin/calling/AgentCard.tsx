@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useDroppable, useDraggable } from '@dnd-kit/core'
 import IncomingCallCard from './IncomingCallCard'
 import TransferCallCard from './TransferCallCard'
@@ -30,6 +31,7 @@ interface AgentCardProps {
     callSid: string
     callerNumber: string
     twilioCall: any
+    contactName?: string | null
   }
   optimisticTransfer?: {
     callerNumber: string
@@ -46,6 +48,11 @@ interface AgentCardProps {
   // Call counts for today
   incomingCallsCount?: number
   outboundCallsCount?: number
+  // Contact info for active call
+  activeCallContact?: {
+    id: string
+    displayName: string
+  } | null
 }
 
 export default function AgentCard({
@@ -64,8 +71,10 @@ export default function AgentCard({
   onResumeCall,
   onEndCall,
   incomingCallsCount = 0,
-  outboundCallsCount = 0
+  outboundCallsCount = 0,
+  activeCallContact
 }: AgentCardProps) {
+  const router = useRouter()
   // Make agent card droppable - only accept calls when agent is available and not busy
   const canAcceptCall = user.is_available && !activeCall && !user.current_call_id
 
@@ -222,7 +231,10 @@ export default function AgentCard({
               </svg>
               <div>
                 <div className="text-xs font-semibold text-blue-700 uppercase">Incoming</div>
-                <div className="text-sm font-bold font-mono text-blue-900">{formatPhoneNumber(incomingCall.callerNumber)}</div>
+                {incomingCall.contactName && (
+                  <div className="text-sm font-bold text-blue-900">{incomingCall.contactName}</div>
+                )}
+                <div className={`font-bold font-mono text-blue-900 ${incomingCall.contactName ? 'text-xs' : 'text-sm'}`}>{formatPhoneNumber(incomingCall.callerNumber)}</div>
               </div>
             </div>
             {onAnswerCall && onDeclineCall && (
@@ -262,13 +274,28 @@ export default function AgentCard({
             ref={activeCall ? setDragRef : undefined}
             {...(activeCall ? listeners : {})}
             {...(activeCall ? attributes : {})}
-            className="flex-shrink-0 backdrop-blur-md bg-gradient-to-br from-blue-50/90 to-indigo-50/90 border-2 border-blue-400 rounded-lg px-3 py-2 flex items-center gap-2 cursor-grab active:cursor-grabbing"
+            onClick={(e) => {
+              // Only navigate if contact exists and we're not dragging
+              if (activeCallContact?.id && e.currentTarget === e.target) {
+                router.push(`/super-admin/contacts/${activeCallContact.id}`)
+              }
+            }}
+            className={`flex-shrink-0 backdrop-blur-md bg-gradient-to-br from-blue-50/90 to-indigo-50/90 border-2 border-blue-400 rounded-lg px-3 py-2 flex items-center gap-2 cursor-grab active:cursor-grabbing ${
+              activeCallContact?.id ? 'hover:bg-blue-100/90 transition-colors' : ''
+            }`}
+            title={activeCallContact?.id ? `Click to view ${activeCallContact.displayName}'s contact details` : undefined}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" onClick={(e) => {
+              // Allow click-through to parent for navigation
+              if (activeCallContact?.id) {
+                e.stopPropagation()
+                router.push(`/super-admin/contacts/${activeCallContact.id}`)
+              }
+            }}>
               <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
               </svg>
-              <div>
+              <div className={activeCallContact?.id ? 'cursor-pointer' : ''}>
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-semibold text-blue-700 uppercase">Active</span>
                   <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full text-xs font-bold">
@@ -276,7 +303,10 @@ export default function AgentCard({
                     {formatDuration(activeCallDuration)}
                   </span>
                 </div>
-                <div className="text-sm font-bold font-mono text-blue-900">{formatPhoneNumber(activeCall?.parameters?.From || user.current_call_phone_number || 'Unknown')}</div>
+                {activeCallContact && (
+                  <div className="text-sm font-bold text-blue-900">{activeCallContact.displayName}</div>
+                )}
+                <div className={`font-bold font-mono text-blue-900 ${activeCallContact ? 'text-xs' : 'text-sm'}`}>{formatPhoneNumber(activeCall?.parameters?.From || user.current_call_phone_number || 'Unknown')}</div>
               </div>
             </div>
             {activeCall && (

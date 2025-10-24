@@ -86,7 +86,9 @@ export default function CallingDashboard() {
     rejectCall,
     holdCall,
     resumeCall,
-    endCall
+    endCall,
+    incomingCallContact,
+    activeCallContact
   } = useTwilioDevice()
 
   // Call parking store
@@ -671,7 +673,8 @@ export default function CallingDashboard() {
             callSid: callSid,
             callerNumber: incomingCall.parameters.From || 'Unknown',
             twilioCall: incomingCall,
-            isTransfer: true // This is a transfer call (includes unpark)
+            isTransfer: true, // This is a transfer call (includes unpark)
+            contactName: incomingCallContact?.displayName || null // Include contact name
           }
         }
 
@@ -703,14 +706,20 @@ export default function CallingDashboard() {
               callSid: incomingCall.parameters.CallSid,
               callerNumber: incomingCall.parameters.From || 'Unknown',
               twilioCall: incomingCall,
-              isTransfer: false // Multi-agent ring, not a transfer
+              isTransfer: false, // Multi-agent ring, not a transfer
+              contactName: incomingCallContact?.displayName || null // Include contact name
             }
-            console.log(`  📞 Adding incoming call to agent: ${user.full_name}`)
+            console.log(`  📞 Adding incoming call to agent: ${user.full_name}`, {
+              contactName: incomingCallContact?.displayName || 'No contact',
+              hasContact: !!incomingCallContact
+            })
           }
         })
 
         setIncomingCallMap(newMap)
-        console.log(`📞 Total agents ringing: ${Object.keys(newMap).length}`)
+        console.log(`📞 Total agents ringing: ${Object.keys(newMap).length}`, {
+          contactName: incomingCallContact?.displayName || 'No contact'
+        })
 
         // Safety timeout: Clear incoming call UI after 45 seconds if not answered
         const timeoutId = setTimeout(() => {
@@ -906,7 +915,7 @@ export default function CallingDashboard() {
           id: tempId,
           callObject: null,
           callerId: callerNumber || 'Unknown',
-          callerName: undefined,
+          callerName: activeCallContact?.displayName || undefined, // Include contact name
           parkedAt: new Date(),
           parkedBy: currentUserId || 'unknown',
           parkedByName: users.find(u => u.id === currentUserId)?.full_name,
@@ -933,6 +942,8 @@ export default function CallingDashboard() {
             callerNumber: callerNumber,
             callId: null,
             tempId: tempId, // Pass temp ID so we can dedupe later
+            contactId: activeCallContact?.id || null, // Include contact ID
+            contactName: activeCallContact?.displayName || null, // Include contact name
           }),
         })
 
@@ -1129,7 +1140,10 @@ export default function CallingDashboard() {
                 </div>
                 <div className="flex-1">
                   <p className="text-xs sm:text-sm font-semibold text-blue-700 uppercase tracking-wide mb-0.5">Incoming Call</p>
-                  <p className="text-xl sm:text-2xl font-bold font-mono text-blue-900">{formatPhoneNumber(incomingCallMap[currentUserId].callerNumber)}</p>
+                  {incomingCallContact && (
+                    <p className="text-lg sm:text-xl font-bold text-blue-900 mb-1">{incomingCallContact.displayName}</p>
+                  )}
+                  <p className={`font-bold font-mono text-blue-900 ${incomingCallContact ? 'text-base sm:text-lg' : 'text-xl sm:text-2xl'}`}>{formatPhoneNumber(incomingCallMap[currentUserId].callerNumber)}</p>
                 </div>
               </div>
               <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
@@ -1241,6 +1255,11 @@ export default function CallingDashboard() {
                   onEndCall={user.id === currentUserId ? endCall : undefined}
                   incomingCallsCount={callCountsByUser[user.id]?.incoming || 0}
                   outboundCallsCount={callCountsByUser[user.id]?.outbound || 0}
+                  activeCallContact={
+                    user.id === currentUserId
+                      ? activeCallContact // Current user: show contact info for active call
+                      : null // Remote users: don't show contact info (we don't have it)
+                  }
                 />
               )
             })}

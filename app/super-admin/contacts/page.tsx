@@ -47,7 +47,9 @@ export default function ContactsPage() {
     makeOutboundCall,
     outboundCall,
     outboundCallStatus,
-    callStartTime
+    callStartTime,
+    incomingCallContact,
+    activeCallContact
   } = useTwilioDevice()
 
   // Fetch user role
@@ -256,27 +258,37 @@ export default function ContactsPage() {
       <Navigation userRole={currentUserRole || undefined} />
 
       {/* Incoming Call Banner */}
-      {incomingCall && !activeCall && (
-        <div className="sticky top-16 z-30 backdrop-blur-sm bg-white/50 border-b border-orange-200">
-          <div className="container mx-auto px-4 sm:px-6 py-4">
-            <IncomingCallCard callerNumber={incomingCall.parameters.From} />
-            <div className="flex gap-3 mt-3">
-              <button
-                onClick={handleAnswerCall}
-                className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
-              >
-                Accept Call
-              </button>
-              <button
-                onClick={() => rejectCall()}
-                className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
-              >
-                Decline
-              </button>
+      {incomingCall && !activeCall && (() => {
+        console.log('🎨 Rendering IncomingCallCard with:', {
+          callerNumber: incomingCall.parameters.From,
+          incomingCallContact,
+          contactName: incomingCallContact?.displayName
+        })
+        return (
+          <div className="sticky top-16 z-30 backdrop-blur-sm bg-white/50 border-b border-orange-200">
+            <div className="container mx-auto px-4 sm:px-6 py-4">
+              <IncomingCallCard
+                callerNumber={incomingCall.parameters.From}
+                contactName={incomingCallContact?.displayName}
+              />
+              <div className="flex gap-3 mt-3">
+                <button
+                  onClick={handleAnswerCall}
+                  className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
+                >
+                  Accept Call
+                </button>
+                <button
+                  onClick={() => rejectCall()}
+                  className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
+                >
+                  Decline
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Active Call Banner */}
       {activeCall && (
@@ -285,6 +297,7 @@ export default function ContactsPage() {
             <ActiveCallBanner
               call={activeCall}
               callStartTime={callStartTime}
+              contactName={activeCallContact?.displayName}
               onEndCall={() => {
                 if (activeCall) {
                   activeCall.disconnect()

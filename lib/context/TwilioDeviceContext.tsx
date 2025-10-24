@@ -11,6 +11,15 @@ interface CallState {
   isOnHold: boolean
 }
 
+interface ContactInfo {
+  id: string
+  name: string           // "John Doe"
+  displayName: string    // Prefer business_name, fallback to full name
+  firstName: string
+  lastName: string
+  businessName: string | null
+}
+
 interface TwilioDeviceContextType {
   device: Device | null
   incomingCall: Call | null
@@ -23,6 +32,8 @@ interface TwilioDeviceContextType {
   callStartTime: Date | null
   outboundCall: Call | null
   outboundCallStatus: string | null
+  incomingCallContact: ContactInfo | null
+  activeCallContact: ContactInfo | null
   acceptCall: () => void
   rejectCall: () => void
   holdCall: (callSid: string) => void
@@ -46,6 +57,12 @@ export function TwilioDeviceProvider({ children }: { children: ReactNode }) {
   const [callStartTime, setCallStartTime] = useState<Date | null>(null)
   const [outboundCall, setOutboundCall] = useState<Call | null>(null)
   const [outboundCallStatus, setOutboundCallStatus] = useState<string | null>(null)
+  const [incomingCallContact, setIncomingCallContact] = useState<ContactInfo | null>(null)
+  const [activeCallContact, setActiveCallContact] = useState<ContactInfo | null>(null)
+
+  // Refs to avoid closure issues in event handlers
+  const incomingCallContactRef = useRef<ContactInfo | null>(null)
+  const activeCallContactRef = useRef<ContactInfo | null>(null)
   const deviceRef = useRef<Device | null>(null)
   const userIdRef = useRef<string | null>(null)
 
@@ -145,10 +162,63 @@ export function TwilioDeviceProvider({ children }: { children: ReactNode }) {
           if (mounted) setError('Token expired - please refresh the page')
         })
 
-        twilioDevice.on('incoming', (call) => {
+        twilioDevice.on('incoming', async (call) => {
           console.log('📞 INCOMING CALL from:', call.parameters.From)
           if (mounted) {
             const callSid = call.parameters.CallSid
+            const phoneNumber = call.parameters.From
+
+            // Lookup contact by phone number
+            try {
+              const apiUrl = `/api/contacts/lookup-by-phone?phone=${encodeURIComponent(phoneNumber)}`
+              console.log('🔍 Looking up contact for:', phoneNumber)
+              console.log('   API URL:', apiUrl)
+
+              const response = await fetch(apiUrl)
+
+              console.log('📡 API Response status:', response.status, response.statusText)
+
+              if (!response.ok) {
+                const errorText = await response.text()
+                console.error('❌ API request failed:', errorText)
+                setIncomingCallContact(null)
+                return
+              }
+
+              const data = await response.json()
+              console.log('📦 API Response data:', data)
+
+              if (data.contact) {
+                const fullName = `${data.contact.first_name} ${data.contact.last_name}`
+                const displayName = data.contact.business_name || fullName
+
+                const contactInfo = {
+                  id: data.contact.id,
+                  name: fullName,
+                  displayName: displayName,
+                  firstName: data.contact.first_name,
+                  lastName: data.contact.last_name,
+                  businessName: data.contact.business_name
+                }
+
+                console.log('✅ Contact found! Setting state:', contactInfo)
+                setIncomingCallContact(contactInfo)
+                incomingCallContactRef.current = contactInfo // Keep ref in sync
+                console.log('✅ incomingCallContact state updated to:', contactInfo.displayName)
+              } else {
+                setIncomingCallContact(null)
+                incomingCallContactRef.current = null // Keep ref in sync
+                console.log('❓ Unknown caller - no contact in database')
+              }
+            } catch (error) {
+              console.error('❌ EXCEPTION during contact lookup:', error)
+              console.error('   Error details:', {
+                message: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined
+              })
+              setIncomingCallContact(null)
+              incomingCallContactRef.current = null // Keep ref in sync
+            }
 
             setIncomingCall(call)
 
@@ -194,6 +264,14 @@ export function TwilioDeviceProvider({ children }: { children: ReactNode }) {
                 setActiveCall(call)
                 setIncomingCall(null)
                 setCallStartTime(new Date())
+
+                // Persist contact info from incoming → active (use ref to avoid closure issues)
+                const currentContact = incomingCallContactRef.current
+                console.log('🔄 Transferring contact from incoming to active:', currentContact?.displayName || 'none')
+                setActiveCallContact(currentContact)
+                activeCallContactRef.current = currentContact // Keep ref in sync
+                setIncomingCallContact(null)
+                incomingCallContactRef.current = null // Keep ref in sync
               }
             })
 
@@ -257,6 +335,8 @@ export function TwilioDeviceProvider({ children }: { children: ReactNode }) {
                 setIncomingCall(null)
                 setActiveCall(null)
                 setCallStartTime(null)
+                setActiveCallContact(null)
+                activeCallContactRef.current = null // Keep ref in sync
               }
             })
 
@@ -264,6 +344,8 @@ export function TwilioDeviceProvider({ children }: { children: ReactNode }) {
               console.log('Call rejected:', callSid)
               if (mounted) {
                 setIncomingCall(null)
+                setIncomingCallContact(null)
+                incomingCallContactRef.current = null // Keep ref in sync
               }
             })
 
@@ -271,6 +353,8 @@ export function TwilioDeviceProvider({ children }: { children: ReactNode }) {
               console.log('📴 Call canceled (caller hung up before answer):', callSid)
               if (mounted) {
                 setIncomingCall(null)
+                setIncomingCallContact(null)
+                incomingCallContactRef.current = null // Keep ref in sync
               }
             })
           }
@@ -439,6 +523,8 @@ export function TwilioDeviceProvider({ children }: { children: ReactNode }) {
         setOutboundCall(null)
         setActiveCall(null)
         setCallStartTime(null)
+        setActiveCallContact(null)
+        activeCallContactRef.current = null // Keep ref in sync
 
         if (userIdRef.current) {
           try {
@@ -516,6 +602,8 @@ export function TwilioDeviceProvider({ children }: { children: ReactNode }) {
     callStartTime,
     outboundCall,
     outboundCallStatus,
+    incomingCallContact,
+    activeCallContact,
     acceptCall,
     rejectCall,
     holdCall,

@@ -1,10 +1,22 @@
 'use client'
 
+import { useEffect } from 'react'
+
 interface IncomingCallCardProps {
   callerNumber: string
+  contactName?: string | null
 }
 
-export default function IncomingCallCard({ callerNumber }: IncomingCallCardProps) {
+export default function IncomingCallCard({ callerNumber, contactName }: IncomingCallCardProps) {
+  // Debug: Log when component renders
+  useEffect(() => {
+    console.log('📞 IncomingCallCard rendered:', {
+      callerNumber,
+      contactName,
+      hasContactName: !!contactName
+    })
+  }, [callerNumber, contactName])
+
   const formatPhoneNumber = (phone: string) => {
     const digits = phone.replace(/\D/g, '')
     if (digits.length === 11 && digits[0] === '1') {
@@ -26,7 +38,15 @@ export default function IncomingCallCard({ callerNumber }: IncomingCallCardProps
         </div>
         <div className="flex-1">
           <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">Incoming Call</p>
-          <p className="text-lg font-bold font-mono text-orange-900">{formatPhoneNumber(callerNumber)}</p>
+
+          {/* Show contact name if available */}
+          {contactName && (
+            <p className="text-base font-bold text-orange-900 mb-0.5">{contactName}</p>
+          )}
+
+          <p className={`font-bold font-mono text-orange-900 ${contactName ? 'text-sm' : 'text-lg'}`}>
+            {formatPhoneNumber(callerNumber)}
+          </p>
         </div>
       </div>
     </div>

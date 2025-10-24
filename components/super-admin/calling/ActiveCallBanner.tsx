@@ -7,9 +7,10 @@ interface ActiveCallBannerProps {
   call: Call
   callStartTime: Date | null
   onEndCall: () => void
+  contactName?: string | null
 }
 
-export default function ActiveCallBanner({ call, callStartTime, onEndCall }: ActiveCallBannerProps) {
+export default function ActiveCallBanner({ call, callStartTime, onEndCall, contactName }: ActiveCallBannerProps) {
   const [duration, setDuration] = useState(0)
 
   // Update duration every second
@@ -59,7 +60,15 @@ export default function ActiveCallBanner({ call, callStartTime, onEndCall }: Act
 
           <div className="flex-1">
             <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">Active Call</p>
-            <p className="text-lg font-bold font-mono text-green-900">{formatPhoneNumber(callerNumber)}</p>
+
+            {/* Show contact name if available */}
+            {contactName && (
+              <p className="text-base font-bold text-green-900">{contactName}</p>
+            )}
+
+            <p className={`font-mono text-green-900 ${contactName ? 'text-sm font-semibold' : 'text-lg font-bold'}`}>
+              {formatPhoneNumber(callerNumber)}
+            </p>
             <p className="text-sm text-green-600 font-mono">{formatDuration(duration)}</p>
           </div>
         </div>

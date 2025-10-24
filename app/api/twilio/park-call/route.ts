@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { callSid, userId, callerNumber, callId, userName } = body
+    const { callSid, userId, callerNumber, callId, userName, contactId, contactName } = body
 
     if (!callSid || !userId || !callerNumber) {
       return NextResponse.json(
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       )
     }
 
-    console.log('🚗 PARKING CALL:', { callSid, userId, userName, callerNumber, callId })
+    console.log('🚗 PARKING CALL:', { callSid, userId, userName, callerNumber, callId, contactId, contactName })
 
     const adminClient = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -94,6 +94,8 @@ export async function POST(request: Request) {
           hold_music_url: holdMusicUrl,
           pstn_call_sid: pstnCallSid,
           parked_by_name: userName || 'Unknown', // Store the user's name for display
+          caller_name: contactName || null, // Store the contact's name for display
+          contact_id: contactId || null, // Store the contact ID for navigation
         },
       })
       .select()
