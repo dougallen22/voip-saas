@@ -46,10 +46,21 @@ export default function MessagesPage() {
   const fetchConversations = async () => {
     try {
       setIsLoading(true)
+      console.log('Fetching conversations...')
       const response = await fetch('/api/sms/conversations/list')
       const data = await response.json()
+      console.log('Conversations API response:', { status: response.status, data })
       if (response.ok) {
         setConversations(data.conversations || [])
+        console.log('Set conversations:', data.conversations?.length || 0)
+
+        // Auto-select first conversation if none selected
+        if (!selectedConversationId && data.conversations?.length > 0) {
+          setSelectedConversationId(data.conversations[0].id)
+          console.log('Auto-selected conversation:', data.conversations[0].id)
+        }
+      } else {
+        console.error('Failed to fetch conversations:', data.error)
       }
     } catch (error) {
       console.error('Error fetching conversations:', error)
