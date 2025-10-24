@@ -4,7 +4,119 @@ This document tracks stable states of the application that can be safely rolled 
 
 ---
 
-## v2.0-persistent-calls (Current - October 23, 2025)
+## v3.0-contact-integration (Current - October 24, 2025)
+
+**Git Tag:** `v3.0-contact-integration`
+**Commit:** `351d836`
+
+### ✅ New Features (All v2.0 features + these improvements):
+- ✅ **Contact name on incoming calls** - Shows contact name above phone number on incoming call banners
+- ✅ **Contact name on active calls** - Displays contact name on active call cards (all pages)
+- ✅ **Clickable active call cards** - Click active call to navigate to contact details page
+- ✅ **Contact lookup API** - Fast contact lookup by phone number endpoint
+- ✅ **Contact preservation** - Contact info persists through park/unpark workflow
+- ✅ **Test tooling** - Contact lookup verification script (`npm run test-lookup`)
+
+### 🔧 Technical Improvements:
+- **Closure bug fix** - Fixed TwilioDeviceContext contact state using refs instead of closures
+- **Phone normalization** - Last 10 digits matching for flexible phone format support
+- **Contact metadata** - Contact ID and name stored in parked_calls database metadata
+- **Smart event handling** - Click navigation doesn't interfere with drag-to-park or end button
+- **Hover feedback** - Visual cues indicate clickable cards (only when contact exists)
+
+### 📦 Key Changes from v2.0-persistent-calls:
+1. Created `/api/contacts/lookup-by-phone` - Fast contact lookup endpoint
+2. Enhanced `TwilioDeviceContext` with refs to fix closure issues (lines 63-65, 206-274)
+3. Updated `AgentCard` to display contact names + handle click navigation
+4. Modified `park-call` API to store contact metadata (contactId, contactName)
+5. Updated calling dashboard to show contact names in incoming call banners
+6. Updated contacts pages to pass contact info to call components
+7. Created `scripts/test-contact-lookup.js` - Test script for verifying contact lookup
+8. Added `test-lookup` npm script to package.json
+
+### 🎨 User Experience Enhancements:
+- **Instant recognition** - Agents see "Rhonda Allen" instead of just "217-931-8000"
+- **Quick access** - Click active call card to view/edit contact without ending call
+- **Visual feedback** - Hover effects show when card is clickable
+- **Consistent UI** - Contact names show on all pages (dashboard, contacts, detail)
+- **Parking lot** - Contact names visible in parking lot and persist when unparked
+
+### 🐛 Bug Fixes:
+- **Fixed:** Contact state closure bug - now uses refs instead of captured state
+- **Fixed:** Contact info properly flows from incoming → active → parked states
+- **Fixed:** Click navigation doesn't trigger when dragging to park
+- **Fixed:** End call button doesn't trigger navigation (event.stopPropagation)
+
+### 🛠️ New Commands:
+```bash
+# Test contact lookup functionality
+npm run test-lookup
+
+# All previous commands still available
+npm run clear-call-status
+npm run cleanup-calls
+```
+
+### 🚀 How to Rollback to This Point:
+
+```bash
+# Rollback code
+git checkout v3.0-contact-integration
+
+# If you need to reset main branch to this point
+git reset --hard v3.0-contact-integration
+
+# Force push (WARNING: This overwrites remote)
+git push origin main --force
+
+# Rebuild and redeploy
+npm run build
+git push origin main
+```
+
+### 📊 Database State:
+- Same schema as v2.0-persistent-calls
+- `parked_calls.metadata` now includes:
+  - `caller_name`: Contact display name
+  - `contact_id`: Contact ID for navigation
+- All other tables unchanged
+
+### 🔐 Environment Variables Required:
+- Same as v2.0-persistent-calls (no new variables)
+
+### ⚠️ Known Issues:
+- None at this point - all features working as expected
+- Contact lookup requires contact to exist in database
+- Unknown callers still show phone number only (expected behavior)
+
+### 📝 Files Modified:
+- `lib/context/TwilioDeviceContext.tsx` - Added refs, contact lookup, closure fix
+- `components/super-admin/calling/AgentCard.tsx` - Contact display + click navigation
+- `components/super-admin/calling/IncomingCallCard.tsx` - Contact name display
+- `components/super-admin/calling/ActiveCallBanner.tsx` - Contact name prop
+- `app/super-admin/calling/page.tsx` - Contact info in incoming call map
+- `app/super-admin/contacts/page.tsx` - Pass contact info to components
+- `app/super-admin/contacts/[id]/page.tsx` - Pass contact info to components
+- `app/api/twilio/park-call/route.ts` - Store contact metadata
+- `app/api/contacts/lookup-by-phone/route.ts` - NEW: Contact lookup API
+- `scripts/test-contact-lookup.js` - NEW: Test script
+- `package.json` - Added test-lookup script
+
+### ✅ Testing Checklist:
+- [x] Call from known contact → name appears on incoming call
+- [x] Answer call → name persists on active call card
+- [x] Click active call card → navigate to contact details
+- [x] Park call → contact name visible in parking lot
+- [x] Unpark call → contact name appears on new agent's card
+- [x] Drag-to-park still works (doesn't trigger navigation)
+- [x] End call button still works (doesn't trigger navigation)
+- [x] Unknown caller → shows phone only, not clickable
+- [x] Test script verifies contact lookup logic
+- [x] Build succeeds with no errors
+
+---
+
+## v2.0-persistent-calls (October 23, 2025)
 
 **Git Tag:** `v2.0-persistent-calls`
 **Commit:** `e5e2b76`
